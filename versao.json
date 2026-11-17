@@ -1,0 +1,9 @@
+{
+  "versao": "1.0.6",
+  "notas": "Teste da atualiza\u00e7\u00e3o online",
+  "arquivos": {
+    "server.py": "b51f6b24032eb28101dd37f67a9860b8d39c784f8c76e4aa96b9e7f41a3bd3ee",
+    "painel_index.html": "6479e6c5034d7e1c287c2a26a1f55aace8b642b60c7a1dc425e91fd1a586b1b4",
+    "painel_main.js": "03883eaeda2e49eef7642b2edc9ae91a52a2716c5f79ffec2beb8d17c92e9ccf"
+  }
+}

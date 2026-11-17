@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>PODCAST PRO</title>
+  <style>
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      padding: 12px;
+      box-sizing: border-box;
+      overflow-y: scroll;
+      font-family: sans-serif;
+      font-size: 12px;
+      color: #d8d8d8;
+      background: #232323;
+    }
+    h2 { font-size: 13px; margin: 14px 0 4px; font-weight: 600; }
+    label { display: block; margin: 8px 0 2px; }
+    input[type="text"], input[type="number"], select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 4px 6px;
+    }
+    .linha { display: flex; gap: 8px; }
+    .linha > div { flex: 1; }
+    .ajuste { margin: 12px 0 4px; }
+    .ajuste .topo { display: flex; justify-content: space-between; align-items: center; }
+    .ajuste label { margin: 0; }
+    .controle { display: flex; align-items: center; gap: 8px; }
+    .controle span { min-width: 72px; text-align: center; }
+    button.passo { margin: 0; padding: 2px 14px; min-width: 34px; }
+    .dica { font-size: 11px; color: #9a9a9a; margin: 2px 0 0; }
+    button { margin: 10px 8px 0 0; padding: 5px 12px; }
+
+    /* abas */
+    #abas { display: flex; gap: 4px; flex-wrap: wrap; }
+    #abas button { margin: 0; padding: 4px 9px; }
+    #abas button.ativa { background-color: #3b6fd4; color: #ffffff; }
+    .aba { display: none; }
+    .aba.visivel { display: block; }
+
+    /* botões */
+    button.principal { display: block; width: 100%; margin: 12px 0 0; padding: 9px 12px; font-size: 13px; background-color: #3b6fd4; color: #ffffff; }
+    button.secundario { display: block; width: 100%; margin: 8px 0 0; padding: 6px 12px; }
+
+    #status {
+      margin: 10px 0 0;
+      padding: 8px;
+      background: #1a1a1a;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 40px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    #status.erro { color: #ff8a80; }
+    .aviso { margin: 8px 0 0; padding: 6px 8px; background: #2d2d2d; color: #c9c9c9; }
+
+    body { background: #1b1b22; }
+    h2 { color: #f2f2f2; font-size: 14px; }
+    .dica { color: #a0a0b0; }
+    #abas { gap: 6px; }
+    .pill { padding: 6px 12px; border-radius: 16px; background-color: #2e2e3a; color: #cfcfdc; cursor: pointer; font-weight: 600; }
+    .pill.ativa { background-color: #ff6a2b; color: #ffffff; }
+    #status { background-color: #26262f; border-radius: 12px; padding: 10px; color: #e6e6ee; }
+    .aviso { background-color: #26262f; border-radius: 12px; padding: 8px 10px; }
+    .cartao { display: flex; flex-direction: row; align-items: center; gap: 12px; margin: 14px 0 0; padding: 14px; border-radius: 16px; cursor: pointer; color: #ffffff; background-color: #ff6a2b; }
+    #Legendas .cartao { background-color: #7c4dff; }
+    #Vertical .cartao { background-color: #12a4a0; }
+    #Silencios .cartao { background-color: #e8457c; }
+    #Buscar .cartao { background-color: #e0a100; }
+    .cartao .ico { width: 44px; height: 44px; border-radius: 22px; background-color: rgba(255,255,255,0.22); text-align: center; font-size: 22px; line-height: 44px; }
+    .cartao .t1 { font-size: 14px; font-weight: 700; }
+    .cartao .t2 { font-size: 11px; opacity: 0.85; margin-top: 2px; }
+    .mini { margin: 8px 0 0; padding: 9px 12px; border-radius: 12px; background-color: #2e2e3a; color: #e6e6ee; text-align: center; cursor: pointer; border: 1px solid #44445a; }
+    .passo { width: 30px; height: 30px; border-radius: 15px; background-color: #ff6a2b; color: #fff; text-align: center; line-height: 30px; font-size: 16px; font-weight: 700; cursor: pointer; }
+    .menu { margin: 12px 0 0; padding: 10px 12px; border-radius: 12px; background-color: #2e2e3a; border: 1px solid #44445a; color: #e6e6ee; font-weight: 700; cursor: pointer; }
+    .pessoa input { flex: 1.3; width: 0; }
+    .cxAp { border: 2px solid #f5b301; color: #ffe29a; }
+    .cxPt { border: 2px solid #ff6a2b; color: #ffd2bd; }
+    .mais { margin: 6px 0 10px; padding: 7px 0; border-radius: 12px; text-align: center; font-size: 20px; font-weight: 800; line-height: 20px; color: #ffffff; cursor: pointer; }
+    .mais.ouro { background-color: #f5b301; }
+    .mais.lar { background-color: #ff6a2b; }
+    .tirar { width: 26px; height: 26px; border-radius: 13px; background-color: #3a2024; color: #ffb4b8; text-align: center; line-height: 24px; font-size: 16px; cursor: pointer; flex: none; align-self: center; }
+    .pessoa { display: flex; flex-direction: row; gap: 6px; margin: 4px 0 0; }
+    .pessoa input { flex: 1.3; width: 0; }
+    .pessoa select { flex: 1; width: 0; }
+    .pessoa.cab span { flex: 1; color: #9a9ab0; font-size: 11px; }
+    .pessoa.cab span:first-child { flex: 1.3; }
+    input[type="text"], select { border-radius: 10px; }
+    .marca { font-size: 15px; font-weight: 800; letter-spacing: 1px; color: #ffffff; margin: 0 0 8px; }
+    .marca span { color: #ff6a2b; }
+  </style>
+</head>
+<body>
+  <div class="marca">PODCAST <span>PRO</span></div>
+  <div id="abas">
+    <div id="abaPodcast" class="pill ativa">Podcast</div>
+    <div id="abaLegendas" class="pill">Legendas</div>
+    <div id="abaVertical" class="pill">Vertical</div>
+    <div id="abaSilencios" class="pill">Silêncios</div>
+    <div id="abaBuscar" class="pill">Buscar</div>
+    <div id="abaAvancado" class="pill">Avançado</div>
+  </div>
+
+  <div id="status">Pronto. Escolha uma aba e clique no botão colorido.</div>
+
+  <!-- trecho: usado por Legendas e Vertical -->
+  <div id="blocoTrecho" style="display:none">
+    <h2>Trecho do podcast</h2>
+    <div class="linha">
+      <div>
+        <label for="estInicio">Início (min:seg)</label>
+        <input id="estInicio" type="text" value="0:00" />
+      </div>
+      <div>
+        <label for="estFim">Fim (min:seg)</label>
+        <input id="estFim" type="text" value="1:00" />
+      </div>
+    </div>
+    <div class="dica">Tempo do podcast original. Até 3 minutos por vez.</div>
+  </div>
+
+  <!-- PODCAST -->
+  <div id="Podcast" class="aba visivel">
+    <h2>Podcast multicâmera</h2>
+    <div class="dica">Sincroniza as câmeras com o áudio dos microfones e troca de câmera para quem está falando. Nada é apagado: as câmeras não usadas ficam desativadas.</div>
+
+    <div id="menuPartic" class="menu"><span id="setaPartic">▸</span> Participantes e apresentador</div>
+    <div id="corpoPartic" style="display:none">
+    <div class="dica">Escreva o nome de cada pessoa na caixa, escolha o vídeo (V1, V2...) e o áudio (A1, A2...) como estão na timeline. As caixas douradas são dos apresentadores; as laranjas, dos participantes. Use o + para adicionar mais.</div>
+    <div class="pessoa cab"><span>Nome</span><span>Vídeo</span><span>Áudio</span></div>
+    <div id="listaApres"></div>
+    <div id="btnMaisApres" class="mais ouro">+</div>
+    <div id="listaPart"></div>
+    <div id="btnMaisPart" class="mais lar">+</div>
+    <label for="pGeral">Câmera geral (quando ninguém domina)</label>
+    <select id="pGeral"><option value="V1" selected>V1</option><option value="V2">V2</option><option value="V3">V3</option></select>
+    <label for="pPrior">Imagem do apresentador</label>
+    <select id="pPrior">
+      <option value="0" selected>Normal (só quem fala)</option>
+      <option value="1">Mais (reações curtas e câmera geral)</option>
+      <option value="2">Bastante</option>
+    </select>
+    </div>
+    <div id="btnPodcastTudo" class="cartao"><div class="ico">🎙</div><div class="tx"><div class="t1">Montar podcast completo</div><div class="t2">Alterna as câmeras sozinho</div></div></div>
+    <div id="btnPodcastTeste" class="mini">Testar só os primeiros 25 s</div>
+    <div class="aviso">Antes: abra a sequência com as 3 câmeras e o áudio dos microfones (a PODCAST 2146).</div>
+  </div>
+
+  <!-- LEGENDAS -->
+  <div id="Legendas" class="aba">
+    <h2>Legendas estilizadas</h2>
+    <div class="dica">Coloca legendas animadas numa trilha de vídeo livre da sequência ativa, a partir da fala. Funciona em qualquer sequência (1 vídeo + 1 áudio, ou com várias trilhas).</div>
+    <label for="estEstilo">Estilo</label>
+    <select id="estEstilo">
+      <option value="aleatorio" selected>Aleatório (mistura)</option>
+      <option value="Bold">Bold</option>
+      <option value="Classic">Classic</option>
+      <option value="Film">Film</option>
+      <option value="Modern">Modern</option>
+      <option value="Simple">Simple</option>
+    </select>
+    <div id="btnEscolherMogrt" class="mini">Escolher outro template (.mogrt)...</div>
+    <div class="dica">Aparecem na lista acima todos os templates .mogrt instalados no Premiere. Se o seu estiver em outra pasta, use o botão para apontar o arquivo. O template precisa ter um campo de texto.</div>
+    <label for="estAudio">Trilha de áudio da fala</label>
+    <select id="estAudio"><option value="auto" selected>Automática (1ª com áudio)</option><option value="0">A1</option><option value="1">A2</option><option value="2">A3</option><option value="3">A4</option><option value="4">A5</option><option value="5">A6</option><option value="6">A7</option><option value="7">A8</option></select>
+    <div id="btnEstilizadas" class="cartao"><div class="ico">✨</div><div class="tx"><div class="t1">Criar legendas estilizadas</div><div class="t2">Legendas animadas no trecho</div></div></div>
+    <h2>Legendas do podcast inteiro</h2>
+    <div class="dica">Transcreve o podcast todo (demora) e cria os arquivos .srt. Só precisa fazer uma vez.</div>
+    <div id="btnLegendasPodcast" class="mini">Transcrever o podcast (por palavra)</div>
+    <div class="aviso">Antes: deixe a sequência do podcast ativa.</div>
+  </div>
+
+  <!-- VERTICAL -->
+  <div id="Vertical" class="aba">
+    <h2>Versão vertical (9:16)</h2>
+    <div class="dica">Cria uma sequência vertical com a câmera de quem fala, enquadrada no rosto. As 3 câmeras ficam em trilhas separadas e as não usadas ficam desativadas.</div>
+    <div id="btnVertical" class="cartao"><div class="ico">📱</div><div class="tx"><div class="t1">Criar versão vertical (9:16)</div><div class="t2">Rosto enquadrado, 9:16</div></div></div>
+    <div class="aviso">Antes: deixe a sequência do podcast ativa e confira o trecho acima. Leva 1 a 3 minutos.</div>
+  </div>
+
+  <!-- SILÊNCIOS -->
+  <div id="Silencios" class="aba">
+    <h2>Cortar silêncios</h2>
+    <div class="ajuste">
+      <div class="topo">
+        <label>Limite de silêncio</label>
+        <div class="controle">
+          <div class="passo" id="limiteMenos">&#8722;</div>
+          <span id="valLimite">-31 dB</span>
+          <div class="passo" id="limiteMais">+</div>
+        </div>
+      </div>
+      <div class="dica">&#8722; mantém sons baixos. + corta mais.</div>
+    </div>
+    <div class="ajuste">
+      <div class="topo">
+        <label>Silêncio mínimo</label>
+        <div class="controle">
+          <div class="passo" id="minimoMenos">&#8722;</div>
+          <span id="valMinimo">0,50 s</span>
+          <div class="passo" id="minimoMais">+</div>
+        </div>
+      </div>
+      <div class="dica">Pausas menores que isso não são cortadas.</div>
+    </div>
+    <div class="ajuste">
+      <div class="topo">
+        <label>Respiro</label>
+        <div class="controle">
+          <div class="passo" id="respiroMenos">&#8722;</div>
+          <span id="valRespiro">0,25 s</span>
+          <div class="passo" id="respiroMais">+</div>
+        </div>
+      </div>
+      <div class="dica">Folga mantida em volta de cada fala.</div>
+    </div>
+    <div id="btnUmClique" class="cartao"><div class="ico">✂</div><div class="tx"><div class="t1">Cortar e legendar (um clique)</div><div class="t2">Remove pausas e legenda</div></div></div>
+    <div id="btnCortarTudo" class="mini">Só cortar (sequência nova)</div>
+    <div class="aviso">Antes: deixe ativa a sequência com o vídeo que será cortado.</div>
+  </div>
+
+  <!-- BUSCAR -->
+  <div id="Buscar" class="aba">
+    <h2>Buscar por assunto</h2>
+    <div class="dica">Escreva o que você quer manter. O plugin procura nas falas do podcast e monta uma sequência só com esses trechos (com as 3 câmeras, como na aba Podcast).</div>
+    <label for="buscaTexto">O que você quer?</label>
+    <input id="buscaTexto" type="text" placeholder="exemplo: perdão, casamento" />
+    <div class="dica">Separe assuntos com vírgula. Use palavras que foram realmente faladas.</div>
+    <label for="buscaContexto">Quanto em volta de cada trecho?</label>
+    <select id="buscaContexto">
+      <option value="curto">Só a frase</option>
+      <option value="medio" selected>Frase e vizinhas (recomendado)</option>
+      <option value="longo">Trecho amplo</option>
+    </select>
+    <div id="btnBuscar" class="cartao"><div class="ico">&#128269;</div><div class="tx"><div class="t1">Buscar trechos</div><div class="t2">Mostra o que foi encontrado</div></div></div>
+    <div id="btnBuscarMontar" class="mini">Montar sequência com esses trechos</div>
+    <div class="aviso">Antes: deixe a PODCAST ativa e faça a transcrição (aba Legendas, uma vez só).</div>
+  </div>
+
+  <!-- AVANÇADO -->
+  <div id="Avancado" class="aba">
+    <h2>Mídia</h2>
+    <label for="caminho">Vídeo (deixe em branco para usar o da sequência ativa)</label>
+    <input id="caminho" type="text" placeholder="Usa o vídeo da sequência ativa" />
+    <div id="btnUsarSequencia" class="mini">Usar vídeo da sequência ativa</div>
+
+    <h2>Legendas simples (.srt)</h2>
+    <div class="linha">
+      <div>
+        <label for="modelo">Modelo</label>
+        <select id="modelo">
+          <option value="small" selected>small</option>
+          <option value="base">base</option>
+          <option value="medium">medium</option>
+        </select>
+      </div>
+      <div>
+        <label for="dispositivo">Processador</label>
+        <select id="dispositivo">
+          <option value="cpu" selected>CPU</option>
+          <option value="cuda">GPU (CUDA)</option>
+        </select>
+      </div>
+    </div>
+    <div id="btnLegendas" class="mini">Gerar legendas (.srt)</div>
+
+    <div style="display:none">
+    <h2>Testes e diagnóstico</h2>
+    <div id="btnPremiere" class="mini">Testar conexão com o Premiere</div>
+    <div id="btnPodcast" class="mini">Analisar podcast (só relatório)</div>
+    <div id="btnSilencios" class="mini">Detectar silêncios (só relatório)</div>
+    <div id="btnTesteCorte" class="mini">Testar corte (3 trechos)</div>
+    <div id="btnDiagnostico" class="mini">Diagnóstico da sequência</div>
+    <div id="btnListaV3" class="mini">Listar clipes de V3</div>
+    <div id="btnSondaVertical" class="mini">Sondar recursos do recorte vertical</div>
+    <div id="btnSondar" class="mini">Listar recursos da API</div>
+    <div id="btnMetodos" class="mini">Listar comandos</div>
+    <div id="btnMogrtTeste" class="mini">Testar template de texto</div>
+    </div>
+    <h2>Sobre</h2>
+    <div class="aviso" id="sobreTexto">PODCAST PRO</div>
+    <div id="btnBuscarAtual" class="mini">Verificar atualização online</div>
+    <div id="btnAtualizar" class="mini">Reiniciar programa local e recarregar painel</div>
+    <div class="dica">Depois de rodar um instalador novo, clique aqui para o programa local e o painel recarregarem.</div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>
