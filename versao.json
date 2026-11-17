@@ -1,9 +1,9 @@
 {
-  "versao": "1.0.8",
-  "notas": "Legendas: blocos mais curtos e ajuste de tempo",
+  "versao": "1.0.9",
+  "notas": "Legendas: mais tempo para o Premiere carregar cada template",
   "arquivos": {
-    "server.py": "d823bc5175f77f707386fcdeb5462cff534554b953b8f727a64ed39f6ec1ab5c",
+    "server.py": "1af68a2e02ab5bcb47708843b50c89e279a4e578366294c4c2388c797622277c",
     "painel_index.html": "3c1275e3e8412617e4fbe3b81191affab5f54aaaedf6a1087c0f26105ca9e29c",
-    "painel_main.js": "e26efa2f67b99fc0a4da3833b73cad4ca3a0987ff9c09ec90236e59ee86e3781"
+    "painel_main.js": "bdcaea578e8de06265bb6852e1e28a0c9bd636030076fa8829061433d15376da"
   }
 }

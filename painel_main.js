@@ -1187,9 +1187,10 @@ const legendar = (modo) => () => semPressa(async () => {
       etapa = "inserir a legenda " + (i + 1);
       const erro = await inserir(l);
       if (erro) falhas.push("legenda " + (i + 1) + " \"" + l.texto + "\": " + erro);
-      await dormir(1000);
+      await dormir(i >= todas.length - 2 ? 2500 : 1500);
     }
-    await dormir(3000);
+    mostrar("Terminando de carregar as legendas no Premiere...");
+    await dormir(8000);
 
     // confere o que ficou e recoloca o que sumiu (até 5 rodadas)
     let recolocadas = 0;
