@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.19"
+VERSAO = "1.0.20"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -724,6 +724,119 @@ def gerar_mogrt(base, texto, destino, nome="AutoCut Legenda", enxuto=False, dura
                 zout.writestr(info.filename, dados)
 
 
+# ---------------------------------------------------------------------------
+# Modelos de legenda guardados num projeto do Premiere (.prproj)
+# O servidor troca o texto e a posição das camadas dentro de uma cópia do projeto;
+# o painel importa essa cópia e coloca a sequência na timeline.
+# ---------------------------------------------------------------------------
+MODELOS_PROJETO = {
+    "Criativo 2": {
+        "base": "base_modelos.prproj",
+        "guid": "e1b6e694-43e2-4d4e-863b-e5e56187eda6",
+        "camadas": [18, 19, 20],
+        "layout": [
+            {"pos": (0.5, 0.32)},
+            {"pos": (0.5, 0.50), "rot": -6},
+            {"pos": (0.5, 0.68)},
+        ],
+    },
+}
+_BL = re.compile(r'(<StartKeyframeValue Encoding="base64" BinaryHash="[^"]*">)(\s*)([A-Za-z0-9+/=\s]+?)(\s*</StartKeyframeValue>)')
+_REF = re.compile(r'<StartKeyframeValue Encoding="base64" BinaryHash="([^"]*)"/>')
+
+
+def _fb_trocar_texto(b, antigo, novo):
+    """Troca um texto dentro do bloco binário (FlatBuffers) de um texto do Premiere."""
+    import struct
+    ant = antigo.encode("utf-8")
+    nov = novo.encode("utf-8")
+    corpo = bytearray(b[8:])
+    pos = bytes(corpo).find(struct.pack("<I", len(ant)) + ant + b"\0")
+    if pos < 0:
+        raise ValueError("texto de exemplo não encontrado no modelo")
+    refs = [p for p in range(0, len(corpo) - 3, 4)
+            if p != pos and p + struct.unpack_from("<I", corpo, p)[0] == pos]
+    if not refs:
+        raise ValueError("ponteiro do texto não encontrado")
+    while len(corpo) % 4:
+        corpo.append(0)
+    novo_pos = len(corpo)
+    corpo += struct.pack("<I", len(nov)) + nov + b"\0"
+    while len(corpo) % 4:
+        corpo.append(0)
+    for p in refs:
+        struct.pack_into("<I", corpo, p, novo_pos - p)
+    cab = bytearray(b[:8])
+    struct.pack_into("<I", cab, 0, len(corpo) - 4)
+    return bytes(cab) + bytes(corpo)
+
+
+def _prproj_camadas(x):
+    saida = []
+    for m in re.finditer(r"<InstanceName>Nova camada de texto</InstanceName>", x):
+        j = x.rfind("<Component ", 0, m.start())
+        saida.append(dict(re.findall(r'<Param Index="(\d+)" ObjectRef="(\d+)"/>', x[j:m.start()])))
+    return saida
+
+
+def _prproj_valor(x, oid, valor):
+    k = x.find('ObjectID="%s"' % oid)
+    a = x.find("<StartKeyframe>", k)
+    b = x.find("</StartKeyframe>", a)
+    return x[:a] + "<StartKeyframe>" + valor + x[b:]
+
+
+def _prproj_materializar(x, k):
+    a = x.find("<StartKeyframeValue", k)
+    m = _REF.match(x, a)
+    if not m:
+        return x
+    h = m.group(1)
+    origem = re.search(r'<StartKeyframeValue Encoding="base64" BinaryHash="%s">([^<]*)</StartKeyframeValue>' % re.escape(h), x)
+    novo_h = h[:-4] + "%04x" % (abs(hash((k, h))) % 65536)
+    return x[:a] + '<StartKeyframeValue Encoding="base64" BinaryHash="%s">%s</StartKeyframeValue>' % (novo_h, origem.group(1)) + x[m.end():]
+
+
+def preparar_modelo_projeto(nome, linhas):
+    """Cria uma cópia do projeto-base com os textos das 'linhas' e devolve caminho + GUID da sequência."""
+    import base64
+    import gzip
+    import hashlib
+    cfg = MODELOS_PROJETO.get(nome)
+    if not cfg:
+        raise RuntimeError("Modelo desconhecido: " + str(nome))
+    base = os.path.join(_RAIZ, "modelos", cfg["base"])
+    if not os.path.isfile(base):
+        raise RuntimeError("Não achei o projeto-base dos modelos: " + base)
+    with gzip.open(base, "rb") as g:
+        x = g.read().decode("utf-8", errors="replace")
+    todas = _prproj_camadas(x)
+    linhas = list(linhas) + [""] * (len(cfg["camadas"]) - len(linhas))
+    for i, idx in enumerate(cfg["camadas"]):
+        c = todas[idx]
+        k = x.find('ObjectID="%s"' % c["0"])
+        x = _prproj_materializar(x, k)
+        m = _BL.search(x, k)
+        b = base64.b64decode(re.sub(r"\s", "", m.group(3)))
+        n = _fb_trocar_texto(b, "Nova camada de texto", linhas[i])
+        x = x[:m.start(3)] + base64.b64encode(n).decode() + x[m.end(3):]
+        lay = cfg["layout"][i]
+        if "pos" in lay:
+            x = _prproj_valor(x, c["2"], "-91445760000000000,%s:%s,0,0,0,0,0,0,5,4,0,0,0,0" % lay["pos"])
+        if "esc" in lay:
+            x = _prproj_valor(x, c["3"], "-91445760000000000,%s.,0,0,0,0,0,0" % lay["esc"])
+        if "rot" in lay:
+            x = _prproj_valor(x, c["6"], "-91445760000000000,%s.,0,0,0,0,0,0" % lay["rot"])
+    pasta = os.path.join(_RAIZ, "modelos", "gerados")
+    os.makedirs(pasta, exist_ok=True)
+    chave = hashlib.md5(("|".join([nome] + linhas)).encode("utf-8")).hexdigest()[:10]
+    destino = os.path.join(pasta, "%s_%s.prproj" % (nome.replace(" ", "_"), chave))
+    with gzip.open(destino, "wb") as g:
+        g.write(x.encode("utf-8"))
+    return {"caminho": destino, "guid": cfg["guid"], "nome": "MODELO_2"}
+
+
+
 def palavras_do_trecho(caminho, inicio, fim, modelo, dispositivo, idioma):
     """Transcreve (por palavra) só o trecho [inicio, fim] de um arquivo de áudio ou vídeo.
     Guarda o resultado em ..\\cache para não repetir. Tempos devolvidos = tempos do arquivo."""
@@ -1103,6 +1216,11 @@ class Handler(BaseHTTPRequestHandler):
                     import threading
                     threading.Timer(0.8, _reiniciar_servidor).start()
                 return
+            if self.path == "/modelo/preparar":
+                try:
+                    return self._responder(preparar_modelo_projeto(corpo.get("modelo", ""), corpo.get("linhas", [])))
+                except Exception as e:
+                    return self._responder({"erro": str(e)}, 400)
             if self.path == "/previa_estilos":
                 pasta = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "mogrts"))
                 os.makedirs(pasta, exist_ok=True)
