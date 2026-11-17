@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.10"
+VERSAO = "1.0.11"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1061,6 +1061,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/ping":
             self._responder({"ok": True, "versao": VERSAO})
+        elif self.path.startswith("/painel/img/"):
+            nome = os.path.basename(self.path.split("?")[0])
+            arq = os.path.join(_RAIZ, "painel", "img", nome)
+            if re.fullmatch(r"[A-Za-z0-9_-]+\.(png|jpg|gif)", nome) and os.path.isfile(arq):
+                dados = open(arq, "rb").read()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/" + ("jpeg" if nome.endswith("jpg") else nome.rsplit(".", 1)[1]))
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", str(len(dados)))
+                self.end_headers()
+                self.wfile.write(dados)
+            else:
+                self._responder({"erro": "imagem não encontrada"}, 404)
         elif self.path == "/atualizacao/verificar":
             self._responder(verificar_atualizacao())
         elif self.path.startswith("/painel/pacote"):
@@ -1273,6 +1286,9 @@ def aplicar_atualizacao():
         "painel_index.html": os.path.join(_RAIZ, "painel", "index.html"),
         "painel_main.js": os.path.join(_RAIZ, "painel", "main.js"),
     }
+    for nome in (info.get("arquivos") or {}):
+        if re.fullmatch(r"img_[A-Za-z0-9_-]+\.png", nome):
+            destinos[nome] = os.path.join(_RAIZ, "painel", "img", nome[4:])
     novos = {}
     for nome, sha in (info.get("arquivos") or {}).items():
         if nome not in destinos:

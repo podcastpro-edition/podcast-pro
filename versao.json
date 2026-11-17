@@ -1,9 +1,9 @@
 {
-  "versao": "1.0.10",
-  "notas": "Prévia dos estilos de legenda",
+  "versao": "1.0.11",
+  "notas": "Galeria de estilos no painel",
   "arquivos": {
-    "server.py": "d4e9a57169175b5e9d62259b8d6543106bb052860e0dc45ef93940cc7d797ab7",
-    "painel_index.html": "b5ebedc50cea100478b813c5ec8aed0abfc12c32f0a600cd3b633729fcd5773c",
-    "painel_main.js": "36e08a55446081783fc41e5e5e68250ab1704915c1eb66b3cdbfcbff289f16dd"
+    "server.py": "00af72fd4a8b6d94ce6d8650281bb7f7fbab186e94015b787fe6a43d4c142991",
+    "painel_index.html": "aa9aff061d8e8eb281858bdccd2b4743255c2ff0fe01b60a85558558933aa735",
+    "painel_main.js": "6c359f06f92d2bfecc996c54d9c49df9b847a310d3eda317d6283bb775a9132c"
   }
 }

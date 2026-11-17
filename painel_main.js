@@ -1771,3 +1771,37 @@ $("btnAtualizar").addEventListener("click", async () => {
   await dormir(600);
   try { location.reload(); } catch (e) { mostrar("Programa local reiniciado. Para ver o painel novo, feche e abra o painel.", false); }
 });
+
+
+// --- Galeria de estilos de legenda (cartões com imagem) -------------------------------
+(function () {
+  const sel = $("estEstilo"), gal = $("galeria");
+  if (!sel || !gal) return;
+  const COM_IMAGEM = new Set(["Bold", "Classic", "Film", "Modern", "Simple"]);
+  let assinatura = "";
+  function desenhar() {
+    const ops = Array.from(sel.options);
+    const ass = ops.map((o) => o.value + "|" + o.textContent).join(";") + "#" + sel.value;
+    if (ass === assinatura) return;
+    assinatura = ass;
+    gal.innerHTML = "";
+    for (const o of ops) {
+      const card = document.createElement("div");
+      card.className = "modelo" + (o.value === sel.value ? " sel" : "");
+      if (COM_IMAGEM.has(o.value)) {
+        const im = document.createElement("img");
+        im.src = SERVICO + "/painel/img/" + o.value + ".png";
+        im.onerror = () => { const d = document.createElement("div"); d.className = "sem"; d.textContent = o.value; if (im.parentNode) im.parentNode.replaceChild(d, im); };
+        card.appendChild(im);
+      } else {
+        const d = document.createElement("div"); d.className = "sem"; d.textContent = o.value === "aleatorio" ? "🎲 mistura" : "modelo"; card.appendChild(d);
+      }
+      const nome = document.createElement("div"); nome.className = "nome"; nome.textContent = o.textContent;
+      card.appendChild(nome);
+      card.addEventListener("click", () => { sel.value = o.value; assinatura = ""; desenhar(); });
+      gal.appendChild(card);
+    }
+  }
+  desenhar();
+  setInterval(desenhar, 1200); // acompanha templates que forem adicionados à lista
+})();

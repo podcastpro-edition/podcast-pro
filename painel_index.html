@@ -66,6 +66,12 @@
     #status { background-color: #26262f; border-radius: 12px; padding: 10px; color: #e6e6ee; }
     .aviso { background-color: #26262f; border-radius: 12px; padding: 8px 10px; }
     .cartao { display: flex; flex-direction: row; align-items: center; gap: 12px; margin: 14px 0 0; padding: 14px; border-radius: 16px; cursor: pointer; color: #ffffff; background-color: #ff6a2b; }
+    #galeria { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 8px; }
+    #galeria .modelo { width: calc(50% - 4px); box-sizing: border-box; border: 2px solid #3a3a48; border-radius: 12px; background: #1b1b24; cursor: pointer; overflow: hidden; }
+    #galeria .modelo.sel { border-color: #7c4dff; background: #26203d; }
+    #galeria .modelo img { display: block; width: 100%; height: 70px; object-fit: cover; background: #000; }
+    #galeria .modelo .sem { height: 70px; display: flex; align-items: center; justify-content: center; background: #111118; color: #8a8aa0; font-size: 11px; }
+    #galeria .modelo .nome { padding: 5px 8px; font-size: 11px; font-weight: 600; }
     #Legendas .cartao { background-color: #7c4dff; }
     #Vertical .cartao { background-color: #12a4a0; }
     #Silencios .cartao { background-color: #e8457c; }
@@ -151,8 +157,9 @@
 
   <!-- LEGENDAS -->
   <div id="Legendas" class="aba">
-    <label for="estEstilo">Estilo</label>
-    <select id="estEstilo">
+    <h2>Estilo da legenda</h2>
+    <div id="galeria"></div>
+    <select id="estEstilo" style="display:none">
       <option value="aleatorio" selected>Aleatório (mistura)</option>
       <option value="Bold">Bold</option>
       <option value="Classic">Classic</option>
@@ -160,8 +167,6 @@
       <option value="Modern">Modern</option>
       <option value="Simple">Simple</option>
     </select>
-    <div id="btnPrevia" class="mini">Ver prévia dos estilos na timeline</div>
-    <div class="dica">Coloca cada estilo (Bold, Classic, Film, Modern, Simple) com um texto de exemplo, um depois do outro, na trilha livre a partir do cursor. Dê play para ver. Depois, apague os clipes ou use Ctrl+Z.</div>
     <div id="btnEscolherMogrt" class="mini">Escolher outro template (.mogrt)...</div>
     <label for="estAudio">Trilha de áudio da fala</label>
     <select id="estAudio"><option value="auto" selected>Automática (1ª com áudio)</option><option value="0">A1</option><option value="1">A2</option><option value="2">A3</option><option value="3">A4</option><option value="4">A5</option><option value="5">A6</option><option value="6">A7</option><option value="7">A8</option></select>
@@ -283,6 +288,7 @@
     <div class="dica">Transcreve o podcast todo (demora) e cria os arquivos .srt. Só precisa fazer uma vez.</div>
     <div id="btnLegendasPodcast" class="mini">Transcrever o podcast (por palavra)</div>
     <div class="aviso">Antes: deixe a sequência do podcast ativa.</div>
+    <div id="btnPrevia" class="mini">Colocar os estilos de exemplo na timeline (teste)</div>
     <h2>Sobre</h2>
     <div class="aviso" id="sobreTexto">PODCAST PRO</div>
     <div id="btnBuscarAtual" class="mini">Verificar atualização online</div>
