@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.13"
+VERSAO = "1.0.14"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1113,7 +1113,7 @@ class Handler(BaseHTTPRequestHandler):
                     if not os.path.isfile(base):
                         continue
                     destino = os.path.join(pasta, "previa_" + nome + ".mogrt")
-                    gerar_mogrt(base, "Aprendendo\nsobre o\nAmor Inteligente", destino, nome="AutoCut " + nome,
+                    gerar_mogrt(base, "Aprendendo\rsobre o\rAmor Inteligente", destino, nome="AutoCut " + nome,
                                 enxuto=True, duracao=dur, tempos=None, limpar_extras=False)
                     saida.append({"estilo": nome, "arquivo": destino})
                 if not saida:

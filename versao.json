@@ -1,8 +1,8 @@
 {
-  "versao": "1.0.13",
-  "notas": "Mensagem de atualização visível perto do botão",
+  "versao": "1.0.14",
+  "notas": "Quebra de linha do texto de exemplo",
   "arquivos": {
-    "server.py": "5514402d3c42e812c1d31845f2eb6a1007d929e7e5c5577449a0f78a6b10de84",
+    "server.py": "ad044a51754a1cb1392b17c45cca2b6d831ae1d2da49b7d7781cc51f070a6236",
     "painel_index.html": "84d2ab97a1821989c1c189703b653d931d3684cbc22fd7fb684c056fca55d08f",
     "painel_main.js": "10dd6893d6c57dc4d3ecfc8ead8a5d18621c79fbcf6d049f7e81191d21804235"
   }
