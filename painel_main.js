@@ -1050,6 +1050,7 @@ const legendar = (modo) => () => semPressa(async () => {
   };
   const sec = async (f) => { const t = await f(); return t && t.seconds !== undefined ? t.seconds : Number(t); };
   const ESTILO = ($("estEstilo") && $("estEstilo").value) || "aleatorio";
+  const AJUSTE = parseFloat(String(($("estAjuste") && $("estAjuste").value) || "0").replace(",", "."));
   const ESCOLHA_AUDIO = ($("estAudio") && $("estAudio").value) || "auto";
   try {
     const ppro = require("premierepro");
@@ -1151,7 +1152,11 @@ const legendar = (modo) => () => semPressa(async () => {
       for (const l of r.legendas) {
         const ini = c.ini + (l.ini - noClipe);
         const fim = Math.min(c.ini + (l.fim - noClipe), c.fim);
-        if (ini >= INICIO - 0.01 && ini < FIM) todas.push({ ...l, seqIni: ini, seqFim: fim });
+        if (ini >= INICIO - 0.01 && ini < FIM) {
+          const aj = (isFinite(AJUSTE) ? AJUSTE : 0);
+          const ini2 = Math.max(0, ini + aj);
+          todas.push({ ...l, seqIni: ini2, seqFim: Math.min(fim + aj, c.fim) });
+        }
       }
     }
     if (!todas.length) return mostrar("Não encontrei falas nesse trecho. Confira a trilha de áudio da fala.", true);

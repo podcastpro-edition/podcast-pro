@@ -1,9 +1,9 @@
 {
-  "versao": "1.0.7",
-  "notas": "Legendas: LEGENDAR SEQUÊNCIA COMPLETA e LEGENDAR IN/OUT",
+  "versao": "1.0.8",
+  "notas": "Legendas: blocos mais curtos e ajuste de tempo",
   "arquivos": {
-    "server.py": "5565c73dfc1541ad1f83ac0020b2538a2d964ab98fe0ffd5f54b551449d1cfe2",
-    "painel_index.html": "72d7ea9369e8b1935b29e698ec8c6a08b9e69af201349181211292b4f95883ea",
-    "painel_main.js": "82467e016449ed0323f69508f7aa22c66caad920de4adc5647134dbcbac6b4b2"
+    "server.py": "d823bc5175f77f707386fcdeb5462cff534554b953b8f727a64ed39f6ec1ab5c",
+    "painel_index.html": "3c1275e3e8412617e4fbe3b81191affab5f54aaaedf6a1087c0f26105ca9e29c",
+    "painel_main.js": "e26efa2f67b99fc0a4da3833b73cad4ca3a0987ff9c09ec90236e59ee86e3781"
   }
 }

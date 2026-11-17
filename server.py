@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.7"
+VERSAO = "1.0.8"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -766,7 +766,7 @@ def legendas_estilizadas(wav, inicio, fim, modo, estilo, pasta_saida, enxuto, se
     if not palavras:
         raise RuntimeError("Não há falas nesse intervalo.")
     blocos = (legendas_palavra_a_palavra(palavras) if modo == "curtas"
-              else legendas_em_blocos(palavras))
+              else legendas_em_blocos(palavras, max_chars=30, max_dur=3.0))
     sorteio = random.Random(semente)
     nomes = list(ESTILOS)
     os.makedirs(pasta_saida, exist_ok=True)
