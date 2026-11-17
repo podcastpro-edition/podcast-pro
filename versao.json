@@ -1,9 +1,9 @@
 {
-  "versao": "1.0.12",
-  "notas": "Texto de exemplo das prévias",
+  "versao": "1.0.13",
+  "notas": "Mensagem de atualização visível perto do botão",
   "arquivos": {
-    "server.py": "f0789a06ea6a738d0e5caa7b9e22fc5c63a892d446f49bd7e84092cf31f890e6",
-    "painel_index.html": "aa9aff061d8e8eb281858bdccd2b4743255c2ff0fe01b60a85558558933aa735",
-    "painel_main.js": "6c359f06f92d2bfecc996c54d9c49df9b847a310d3eda317d6283bb775a9132c"
+    "server.py": "5514402d3c42e812c1d31845f2eb6a1007d929e7e5c5577449a0f78a6b10de84",
+    "painel_index.html": "84d2ab97a1821989c1c189703b653d931d3684cbc22fd7fb684c056fca55d08f",
+    "painel_main.js": "10dd6893d6c57dc4d3ecfc8ead8a5d18621c79fbcf6d049f7e81191d21804235"
   }
 }

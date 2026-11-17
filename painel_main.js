@@ -1715,6 +1715,7 @@ $("btnBuscarMontar").addEventListener("click", () => semPressa(async () => {
   await montarPodcast(Infinity, { faixas, prefixo: "BUSCA " });
 }));
 
+const globalMostrar = (t, e) => { try { status.textContent = t; status.className = e ? "erro" : ""; } catch (x) { /* sem status */ } };
 // --- Sobre: versões e atualização sem fechar o Premiere ---------------------------
 const VERSAO_PAINEL = (typeof __PACOTE_VERSAO !== "undefined") ? __PACOTE_VERSAO : "dev";
 async function atualizarSobre() {
@@ -1741,6 +1742,7 @@ async function esperarServidor() {
   return false;
 }
 $("btnBuscarAtual").addEventListener("click", async () => {
+  const mostrar = (t, e) => { window.mostrarGlobal ? 0 : 0; $("msgAtual").textContent = t; $("msgAtual").style.color = e ? "#ff8a80" : "#9a9a9a"; globalMostrar(t, e); };
   mostrar("Procurando atualização online...");
   try {
     const v = await (await fetch(SERVICO + "/atualizacao/verificar")).json();
