@@ -1783,7 +1783,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     etapa = "ler o projeto";
     for (const x of await listar()) nomesAntes.add(x.it.guid ? String(x.it.guid) : x.nome);
     etapa = "importar a sequência";
-    const ok = await projeto.importSequences("C:\\PODCAST_PRO\\modelos\\modelos_teste.prproj", ["584c008b-6940-4487-857f-cf50d92dd8fc"]);
+    const ok = await projeto.importSequences("C:\\PODCAST_PRO\\modelos\\modelos_teste.prproj", [ppro.Guid.fromString("584c008b-6940-4487-857f-cf50d92dd8fc")]);
     await dormir(2000);
     etapa = "procurar a sequência importada";
     const depois = await listar();
