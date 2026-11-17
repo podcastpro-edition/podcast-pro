@@ -1,9 +1,9 @@
 {
-  "versao": "1.0.9",
-  "notas": "Legendas: mais tempo para o Premiere carregar cada template",
+  "versao": "1.0.10",
+  "notas": "Prévia dos estilos de legenda",
   "arquivos": {
-    "server.py": "1af68a2e02ab5bcb47708843b50c89e279a4e578366294c4c2388c797622277c",
-    "painel_index.html": "3c1275e3e8412617e4fbe3b81191affab5f54aaaedf6a1087c0f26105ca9e29c",
-    "painel_main.js": "bdcaea578e8de06265bb6852e1e28a0c9bd636030076fa8829061433d15376da"
+    "server.py": "d4e9a57169175b5e9d62259b8d6543106bb052860e0dc45ef93940cc7d797ab7",
+    "painel_index.html": "b5ebedc50cea100478b813c5ec8aed0abfc12c32f0a600cd3b633729fcd5773c",
+    "painel_main.js": "36e08a55446081783fc41e5e5e68250ab1704915c1eb66b3cdbfcbff289f16dd"
   }
 }

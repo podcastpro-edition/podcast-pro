@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.9"
+VERSAO = "1.0.10"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1090,6 +1090,22 @@ class Handler(BaseHTTPRequestHandler):
                     import threading
                     threading.Timer(0.8, _reiniciar_servidor).start()
                 return
+            if self.path == "/previa_estilos":
+                pasta = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "mogrts"))
+                os.makedirs(pasta, exist_ok=True)
+                dur = float(corpo.get("duracao", 3.0))
+                saida = []
+                for nome in ESTILOS:
+                    base = os.path.join(pasta_templates(), ESTILOS[nome])
+                    if not os.path.isfile(base):
+                        continue
+                    destino = os.path.join(pasta, "previa_" + nome + ".mogrt")
+                    gerar_mogrt(base, nome + ": texto de exemplo", destino, nome="AutoCut " + nome,
+                                enxuto=True, duracao=dur, tempos=None, limpar_extras=False)
+                    saida.append({"estilo": nome, "arquivo": destino})
+                if not saida:
+                    return self._responder({"erro": "Não achei os templates de legenda do Premiere."}, 400)
+                return self._responder({"previas": saida})
             if self.path == "/reiniciar":
                 self._responder({"ok": True})
                 import threading

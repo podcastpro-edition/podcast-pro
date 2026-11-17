@@ -1220,6 +1220,51 @@ const legendar = (modo) => () => semPressa(async () => {
     mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
   }
 });
+$("btnPrevia").addEventListener("click", () => semPressa(async () => {
+  let etapa = "começando";
+  try {
+    const DUR = 3;
+    const ppro = require("premierepro");
+    const projeto = await ppro.Project.getActiveProject();
+    const seq = await projeto.getActiveSequence();
+    if (!seq) return mostrar("Nenhuma sequência ativa. Clique na sequência na timeline.", true);
+    const sec = async (f) => { const t = await f(); return t && t.seconds !== undefined ? t.seconds : Number(t); };
+    let t0 = 0;
+    try { t0 = await sec(() => seq.getPlayerPosition()); } catch (e) { t0 = 0; }
+    if (!isFinite(t0)) t0 = 0;
+    etapa = "gerar as prévias";
+    mostrar("Gerando as prévias dos estilos...");
+    const r = await chamar("/previa_estilos", { duracao: DUR });
+    const previas = r.previas;
+    const fimTotal = t0 + DUR * previas.length;
+    // trilha de vídeo livre (a mais alta sem clipes nesse intervalo), nunca a V1
+    etapa = "achar uma trilha livre";
+    const nV = await seq.getVideoTrackCount();
+    let iv = -1;
+    for (let i = nV - 1; i >= 1; i--) {
+      const itens = await (await seq.getVideoTrack(i)).getTrackItems(1, false);
+      let ocupada = false;
+      for (const it of itens) {
+        const a = await sec(() => it.getStartTime()), b = await sec(() => it.getEndTime());
+        if (b > t0 + 0.05 && a < fimTotal - 0.05) { ocupada = true; break; }
+      }
+      if (!ocupada) { iv = i; break; }
+    }
+    if (iv < 0) return mostrar("Não há trilha de vídeo livre para a prévia. Adicione uma trilha de vídeo vazia e tente de novo.", true);
+    const editor = await ppro.SequenceEditor.getEditor(seq);
+    for (let k = 0; k < previas.length; k++) {
+      etapa = "colocar a prévia " + previas[k].estilo;
+      mostrar("Colocando a prévia " + (k + 1) + " de " + previas.length + " (" + previas[k].estilo + ")...");
+      const tIni = await ppro.TickTime.createWithSeconds(t0 + DUR * k);
+      await editor.insertMogrtFromPath(previas[k].arquivo, tIni, iv, 0);
+      await dormir(2500);
+    }
+    await dormir(4000);
+    mostrar("Pronto! Estilos na trilha V" + (iv + 1) + ", a partir do cursor: " + previas.map((p) => p.estilo).join(", ") + ".\nDê play para ver. Para remover: Ctrl+Z ou apague esses clipes.");
+  } catch (e) {
+    mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
+  }
+}));
 $("btnLegSeq").addEventListener("click", legendar("seq"));
 $("btnLegInOut").addEventListener("click", legendar("inout"));
 
