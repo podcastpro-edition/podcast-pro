@@ -151,8 +151,6 @@
 
   <!-- LEGENDAS -->
   <div id="Legendas" class="aba">
-    <h2>Legendas estilizadas</h2>
-    <div class="dica">Coloca legendas animadas numa trilha de vídeo livre da sequência ativa, a partir da fala. Funciona em qualquer sequência (1 vídeo + 1 áudio, ou com várias trilhas).</div>
     <label for="estEstilo">Estilo</label>
     <select id="estEstilo">
       <option value="aleatorio" selected>Aleatório (mistura)</option>
@@ -163,14 +161,10 @@
       <option value="Simple">Simple</option>
     </select>
     <div id="btnEscolherMogrt" class="mini">Escolher outro template (.mogrt)...</div>
-    <div class="dica">Aparecem na lista acima todos os templates .mogrt instalados no Premiere. Se o seu estiver em outra pasta, use o botão para apontar o arquivo. O template precisa ter um campo de texto.</div>
     <label for="estAudio">Trilha de áudio da fala</label>
     <select id="estAudio"><option value="auto" selected>Automática (1ª com áudio)</option><option value="0">A1</option><option value="1">A2</option><option value="2">A3</option><option value="3">A4</option><option value="4">A5</option><option value="5">A6</option><option value="6">A7</option><option value="7">A8</option></select>
-    <div id="btnEstilizadas" class="cartao"><div class="ico">✨</div><div class="tx"><div class="t1">Criar legendas estilizadas</div><div class="t2">Legendas animadas no trecho</div></div></div>
-    <h2>Legendas do podcast inteiro</h2>
-    <div class="dica">Transcreve o podcast todo (demora) e cria os arquivos .srt. Só precisa fazer uma vez.</div>
-    <div id="btnLegendasPodcast" class="mini">Transcrever o podcast (por palavra)</div>
-    <div class="aviso">Antes: deixe a sequência do podcast ativa.</div>
+    <div id="btnLegSeq" class="cartao"><div class="ico">✨</div><div class="tx"><div class="t1">LEGENDAR SEQUÊNCIA COMPLETA</div><div class="t2">Do começo ao fim da sequência</div></div></div>
+    <div id="btnLegInOut" class="cartao"><div class="ico">✂️</div><div class="tx"><div class="t1">LEGENDAR IN/OUT</div><div class="t2">Só entre os pontos In e Out</div></div></div>
   </div>
 
   <!-- VERTICAL -->
@@ -280,6 +274,10 @@
     <div id="btnMetodos" class="mini">Listar comandos</div>
     <div id="btnMogrtTeste" class="mini">Testar template de texto</div>
     </div>
+    <h2>Legendas do podcast inteiro</h2>
+    <div class="dica">Transcreve o podcast todo (demora) e cria os arquivos .srt. Só precisa fazer uma vez.</div>
+    <div id="btnLegendasPodcast" class="mini">Transcrever o podcast (por palavra)</div>
+    <div class="aviso">Antes: deixe a sequência do podcast ativa.</div>
     <h2>Sobre</h2>
     <div class="aviso" id="sobreTexto">PODCAST PRO</div>
     <div id="btnBuscarAtual" class="mini">Verificar atualização online</div>

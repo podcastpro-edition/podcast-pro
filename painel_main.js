@@ -1039,7 +1039,7 @@ $("btnMogrtTeste").addEventListener("click", () => semPressa(async () => {
 // --- Legendas estilizadas: funciona em QUALQUER sequência ---------------------------
 // Acha o áudio da fala (qualquer trilha), transcreve só o trecho pedido e coloca os
 // templates numa trilha de vídeo livre (acima de tudo), sem mexer no resto da timeline.
-$("btnEstilizadas").addEventListener("click", () => semPressa(async () => {
+const legendar = (modo) => () => semPressa(async () => {
   let etapa = "começando";
   const lerTempo = (txt, padrao) => {
     const t = String(txt || "").trim().replace(",", ".");
@@ -1058,10 +1058,14 @@ $("btnEstilizadas").addEventListener("click", () => semPressa(async () => {
     if (!seq) return mostrar("Nenhuma sequência ativa. Clique na sequência na timeline.", true);
     const fimSeq = await sec(() => seq.getEndTime());
     if (!(fimSeq > 0)) return mostrar("A sequência está vazia.", true);
-    const INICIO = lerTempo($("estInicio") && $("estInicio").value, 0);
-    const FIM = Math.min(lerTempo($("estFim") && $("estFim").value, INICIO + 180), fimSeq);
-    if (!(FIM > INICIO) || !(INICIO >= 0)) return mostrar("Confira Início e Fim (exemplo: 0:00 e 1:00). O Fim precisa ser maior que o Início e caber na sequência (ela tem " + Math.floor(fimSeq / 60) + ":" + String(Math.floor(fimSeq % 60)).padStart(2, "0") + ").", true);
-    if (FIM - INICIO > 180) return mostrar("Escolha um trecho de até 3 minutos por vez.", true);
+    let INICIO = 0, FIM = fimSeq;
+    if (modo === "inout") {
+      let pin = 0, pout = 0;
+      try { pin = await sec(() => seq.getInPoint()); pout = await sec(() => seq.getOutPoint()); } catch (e) { pin = 0; pout = 0; }
+      INICIO = Math.max(0, pin);
+      FIM = Math.min(pout, fimSeq);
+      if (!(FIM > INICIO + 0.5)) return mostrar("Marque o trecho na timeline: ponha o cursor no começo e aperte I, depois no fim e aperte O. Depois clique de novo em LEGENDAR IN/OUT.", true);
+    }
 
     // ---- quais trilhas têm clipes (para achar o áudio da fala e uma trilha de vídeo livre)
     etapa = "ler as trilhas da sequência";
@@ -1091,7 +1095,7 @@ $("btnEstilizadas").addEventListener("click", () => semPressa(async () => {
     else for (let i = 0; i < nA; i++) if (audio[i].some((c) => !c.des && sobrepoe(c))) { ia = i; break; }
     if (ia < 0 || ia >= nA || !audio[ia].some((c) => !c.des && sobrepoe(c))) {
       return mostrar("Não achei áudio de fala nesse trecho" + (ESCOLHA_AUDIO !== "auto" ? " na trilha A" + (ia + 1) : "") +
-        ".\nConfira Início/Fim e a trilha de áudio da fala.", true);
+        ".\nConfira a trilha de áudio da fala.", true);
     }
     const clipesFala = audio[ia].filter((c) => !c.des && sobrepoe(c));
 
@@ -1150,7 +1154,7 @@ $("btnEstilizadas").addEventListener("click", () => semPressa(async () => {
         if (ini >= INICIO - 0.01 && ini < FIM) todas.push({ ...l, seqIni: ini, seqFim: fim });
       }
     }
-    if (!todas.length) return mostrar("Não encontrei falas nesse trecho. Confira Início/Fim e a trilha de áudio.", true);
+    if (!todas.length) return mostrar("Não encontrei falas nesse trecho. Confira a trilha de áudio da fala.", true);
     todas.sort((x, y) => x.seqIni - y.seqIni);
 
     // ---- coloca na trilha livre
@@ -1209,7 +1213,9 @@ $("btnEstilizadas").addEventListener("click", () => semPressa(async () => {
   } catch (e) {
     mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
   }
-}));
+});
+$("btnLegSeq").addEventListener("click", legendar("seq"));
+$("btnLegInOut").addEventListener("click", legendar("inout"));
 
 // --- Lista todos os clipes de uma trilha de vídeo (V3) da sequência ativa ----
 $("btnListaV3").addEventListener("click", async () => {
@@ -1556,7 +1562,7 @@ $("btnVertical").addEventListener("click", () => semPressa(async () => {
 // --- Abas do painel ---------------------------------------------------------
 (function () {
   const abas = ["Podcast", "Legendas", "Vertical", "Silencios", "Buscar", "Avancado"];
-  const comTrecho = new Set(["Legendas", "Vertical"]);
+  const comTrecho = new Set(["Vertical"]);
   function abrir(nome) {
     abas.forEach((a) => {
       const conteudo = $(a);
