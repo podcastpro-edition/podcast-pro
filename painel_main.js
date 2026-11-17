@@ -1773,29 +1773,21 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const projeto = await ppro.Project.getActiveProject();
     const sequencia = await projeto.getActiveSequence();
     if (!sequencia) return msg("Abra uma sequência primeiro.", true);
-    const nomesAntes = new Set();
-    const listar = async () => {
-      const lista = [];
-      const itens = await (await projeto.getRootItem()).getItems();
-      for (const it of itens) lista.push({ it, nome: it.name });
-      return lista;
-    };
-    etapa = "ler o projeto";
-    for (const x of await listar()) nomesAntes.add(x.it.guid ? String(x.it.guid) : x.nome);
     etapa = "importar a sequência";
     const ok = await projeto.importSequences("C:\\PODCAST_PRO\\modelos\\modelos_teste.prproj", [ppro.Guid.fromString("584c008b-6940-4487-857f-cf50d92dd8fc")]);
     await dormir(2000);
     etapa = "procurar a sequência importada";
-    const depois = await listar();
-    const novos = depois.filter((x) => !nomesAntes.has(x.it.guid ? String(x.it.guid) : x.nome));
-    msg("importSequences devolveu: " + ok + ". Itens novos: " + novos.map((n) => n.nome).join(", "));
-    if (!novos.length) return;
+    const itens = await (await projeto.getRootItem()).getItems();
+    const iguais = itens.filter((it) => it.name === "TEST LEGENDA");
+    msg("importSequences devolveu: " + ok + ". Sequências 'TEST LEGENDA' no projeto: " + iguais.length);
+    if (!iguais.length) return;
+    const novos = [{ it: iguais[iguais.length - 1], nome: "TEST LEGENDA" }];
     etapa = "colocar na timeline";
     const editor = await ppro.SequenceEditor.getEditor(sequencia);
     let t;
     try { t = await sequencia.getPlayerPosition(); } catch (e) { t = await sequencia.getEndTime(); }
     await executar(projeto, "Modelo: colocar", () => editor.createOverwriteItemAction(novos[0].it, t, 2, 2));
-    msg("Pronto: importei e coloquei na timeline (V3). Itens novos: " + novos.map((n) => n.nome).join(", "));
+    msg("Pronto: importei e coloquei na timeline (V3). Confira se apareceu o gráfico com 3 textos.");
   } catch (e) {
     msg("Falhou em '" + etapa + "': " + (e && e.message ? e.message : e), true);
   }
