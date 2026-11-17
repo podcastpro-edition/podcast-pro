@@ -1762,3 +1762,41 @@ $("btnAtualizar").addEventListener("click", async () => {
   desenhar();
   setInterval(desenhar, 1200); // acompanha templates que forem adicionados à lista
 })();
+
+
+// ---- Teste: importar uma sequência de outro projeto (.prproj) e colocar na timeline ----
+$("btnTesteModelo").addEventListener("click", async () => {
+  const msg = (t, e) => { $("msgModelo").textContent = t; $("msgModelo").style.color = e ? "#ff8a80" : "#9a9a9a"; };
+  let etapa = "começar";
+  try {
+    const ppro = require("premierepro");
+    const projeto = await ppro.Project.getActiveProject();
+    const sequencia = await projeto.getActiveSequence();
+    if (!sequencia) return msg("Abra uma sequência primeiro.", true);
+    const nomesAntes = new Set();
+    const listar = async () => {
+      const lista = [];
+      const itens = await (await projeto.getRootItem()).getItems();
+      for (const it of itens) lista.push({ it, nome: it.name });
+      return lista;
+    };
+    etapa = "ler o projeto";
+    for (const x of await listar()) nomesAntes.add(x.it.guid ? String(x.it.guid) : x.nome);
+    etapa = "importar a sequência";
+    const ok = await projeto.importSequences("C:\\PODCAST_PRO\\modelos\\modelos_teste.prproj", ["584c008b-6940-4487-857f-cf50d92dd8fc"]);
+    await dormir(2000);
+    etapa = "procurar a sequência importada";
+    const depois = await listar();
+    const novos = depois.filter((x) => !nomesAntes.has(x.it.guid ? String(x.it.guid) : x.nome));
+    msg("importSequences devolveu: " + ok + ". Itens novos: " + novos.map((n) => n.nome).join(", "));
+    if (!novos.length) return;
+    etapa = "colocar na timeline";
+    const editor = await ppro.SequenceEditor.getEditor(sequencia);
+    let t;
+    try { t = await sequencia.getPlayerPosition(); } catch (e) { t = await sequencia.getEndTime(); }
+    await executar(projeto, "Modelo: colocar", () => editor.createOverwriteItemAction(novos[0].it, t, 2, 2));
+    msg("Pronto: importei e coloquei na timeline (V3). Itens novos: " + novos.map((n) => n.nome).join(", "));
+  } catch (e) {
+    msg("Falhou em '" + etapa + "': " + (e && e.message ? e.message : e), true);
+  }
+});
