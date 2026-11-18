@@ -908,7 +908,6 @@ async function montarPodcast(limite, opcoes = {}) {
   }
 }
 
-$("btnPodcastTeste").addEventListener("click", () => semPressa(() => montarPodcast(25)));
 $("btnPodcastTudo").addEventListener("click", () => semPressa(() => montarPodcast(Infinity)));
 
 // --- Legendas do podcast: transcrição por palavra (só os microfones) ---------
