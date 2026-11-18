@@ -2102,6 +2102,7 @@ $("btnVertical").addEventListener("click", () => semPressa(async () => {
     });
     const bloco = $("blocoTrecho");
     if (bloco) bloco.style.display = comTrecho.has(nome) ? "block" : "none";
+    try { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; } catch (e) { /* segue */ } // aba nova começa no topo
   }
   abas.forEach((a) => { const b = $("aba" + a); if (b) b.addEventListener("click", () => abrir(a)); });
   abrir("Podcast");
@@ -3527,7 +3528,8 @@ $("btnTesteModelo").addEventListener("click", async () => {
     MODO_CRIATIVO = true;
     if (!C) C = carregarC();
     if (!fontes.length) { try { fontes = (await (await fetch(SERVICO + "/estilos/fontes")).json()).fontes || []; } catch (e) { fontes = []; } }
-    desenharC(); agendarPreviaC();
+    desenharCInterno(); agendarPreviaC();
+    subirAoTopo(); // aba nova sempre começa no topo
   }
   Array.from(document.querySelectorAll("#abas .pill")).forEach((b) => b.addEventListener("click", () => {
     if (b.id === "abaCriativos") abrirCriativos(); else MODO_CRIATIVO = false;
