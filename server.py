@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.23"
+VERSAO = "1.0.24"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1479,6 +1479,15 @@ class Handler(BaseHTTPRequestHandler):
                     import threading
                     threading.Timer(0.8, _reiniciar_servidor).start()
                 return
+            if self.path == "/legendas_overlay":
+                import time
+                pasta_ov = os.path.join(_RAIZ, "cache", "overlays")
+                nome_ov = "overlay_%s_%d.mov" % (re.sub(r"\W", "", corpo.get("estilo", "x")), int(time.time()))
+                blocos = [(float(b["a"]), float(b["b"]), str(b["texto"])) for b in corpo["blocos"]]
+                return self._responder(gerar_overlay(blocos, corpo.get("estilo"), corpo.get("w", 1920),
+                                                     corpo.get("h", 1080), corpo.get("fps", 30),
+                                                     os.path.join(pasta_ov, nome_ov)))
+
             if self.path == "/modelo/preparar":
                 try:
                     return self._responder(preparar_modelo_projeto(corpo.get("modelo", ""), corpo.get("linhas", [])))
@@ -1588,15 +1597,6 @@ class Handler(BaseHTTPRequestHandler):
                     corpo.get("modo", "curtas"), corpo.get("estilo", "aleatorio"),
                     os.path.normpath(pasta), bool(corpo.get("enxuto", False)),
                     corpo.get("semente", 1), corpo.get("cache"), corpo.get("prefixo", ""))})
-
-            if self.path == "/legendas_overlay":
-                import time
-                pasta_ov = os.path.join(_RAIZ, "cache", "overlays")
-                nome_ov = "overlay_%s_%d.mov" % (re.sub(r"\W", "", corpo.get("estilo", "x")), int(time.time()))
-                blocos = [(float(b["a"]), float(b["b"]), str(b["texto"])) for b in corpo["blocos"]]
-                return self._responder(gerar_overlay(blocos, corpo.get("estilo"), corpo.get("w", 1920),
-                                                     corpo.get("h", 1080), corpo.get("fps", 30),
-                                                     os.path.join(pasta_ov, nome_ov)))
 
             if self.path == "/plano_vertical":
                 for o in corpo["cameras"].values():

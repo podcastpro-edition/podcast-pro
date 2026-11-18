@@ -1,8 +1,8 @@
 {
-  "versao": "1.0.23",
-  "notas": "Legendas Criativo: um unico video transparente (leve, estilo AutoCut)",
+  "versao": "1.0.24",
+  "notas": "Corrige erro ao desenhar legendas Criativo",
   "arquivos": {
-    "server.py": "ad3ab014a56fcdfac1cc4440512f7958ef1af4ea9d4069a28a6035b4abf99b35",
+    "server.py": "56b35f033deaa9636a4076a0db963ab9088cbed733dcd6838221f1140ea61ef1",
     "painel_index.html": "54313e17e09558dab6b23da149f7c00f64381b38e317a639fcf1fad673721d15",
     "painel_main.js": "9f6cb3e582d6c2def42628240a3b5ca8771eceb07ca9f3b5230715e014b4a860",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
