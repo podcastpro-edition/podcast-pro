@@ -2944,7 +2944,16 @@ $("btnTesteModelo").addEventListener("click", async () => {
     return c;
   }
 
-  function desenhar() {
+  let LARG_PREV = 0;
+  function desenhar() { // redesenha sem o painel "pular": guarda a rolagem e reserva o espaço da prévia
+    const y0 = Math.max(window.scrollY || 0, document.documentElement.scrollTop || 0, document.body.scrollTop || 0);
+    const ant = $("edPrevia");
+    if (ant && ant.offsetWidth) LARG_PREV = ant.offsetWidth / (ant.getAttribute("data-vert") === "1" ? 0.4 : 1);
+    desenharInterno();
+    const volta = () => { try { window.scrollTo(0, y0); } catch (e) { /* segue */ } try { document.documentElement.scrollTop = y0; document.body.scrollTop = y0; } catch (e) { /* segue */ } };
+    volta(); setTimeout(volta, 60); setTimeout(volta, 350);
+  }
+  function desenharInterno() {
     if (E.sel === undefined || E.sel >= E.linhas.length) E.sel = 0;
     if (E.sel < -1) E.sel = -1;
     caixa.innerHTML = "";
@@ -2968,7 +2977,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     for (const [v, n] of [["h", "Vídeo horizontal"], ["v", "Vídeo vertical"]]) {
       const b = el("div", "ed-btn", n); b.style.marginRight = "6px"; b.style.width = "auto"; b.style.paddingLeft = "10px"; b.style.paddingRight = "10px";
       if ((E.formato || "h") === v) { b.style.backgroundColor = "#4a3fa0"; b.style.color = "#ffffff"; }
-      b.addEventListener("click", () => { E.formato = v; desenhar(); agendarPrevia(); });
+      b.addEventListener("click", () => { E.formato = v; ULTIMA_PREVIA = ""; desenhar(); agendarPrevia(); });
       fm.appendChild(b);
     }
     const bg = el("div", "ed-btn", E.guias ? "Guias: ligadas" : "Guias: desligadas"); bg.style.width = "auto"; bg.style.paddingLeft = "10px"; bg.style.paddingRight = "10px";
@@ -2977,9 +2986,12 @@ $("btnTesteModelo").addEventListener("click", async () => {
     fm.appendChild(bg);
     prev.appendChild(fm);
     const moldura = el("div"); moldura.style.position = "relative";
-    const im = document.createElement("img"); im.id = "edPrevia"; im.className = "ed-prev";
+    const vert = E.formato === "v";
+    if (vert) { moldura.style.width = "40%"; moldura.style.marginLeft = "auto"; moldura.style.marginRight = "auto"; }
+    const im = document.createElement("img"); im.id = "edPrevia"; im.className = "ed-prev"; im.setAttribute("data-vert", vert ? "1" : "0");
+    im.style.display = "block";
+    if (LARG_PREV) im.style.minHeight = Math.round(LARG_PREV * (vert ? 0.4 * 16 / 9 : 9 / 16)) + "px"; // reserva o espaço enquanto a imagem carrega
     if (ULTIMA_PREVIA) im.src = ULTIMA_PREVIA; // mantém a imagem anterior até a nova ficar pronta (sem piscar)
-    if (E.formato === "v") { im.style.width = "40%"; im.style.marginLeft = "auto"; im.style.marginRight = "auto"; }
     moldura.appendChild(im);
     // setas dentro da prévia: movem a linha selecionada (ou todas, se nenhuma estiver aberta)
     let segurando = null;
