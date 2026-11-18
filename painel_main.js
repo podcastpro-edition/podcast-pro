@@ -2028,41 +2028,60 @@ $("btnTesteModelo").addEventListener("click", async () => {
     return { ppro, projeto, seq, achados };
   }
   const fmt = (t) => { const m = Math.floor(t / 60), sg = t - m * 60; return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0") + ":" + sg.toFixed(1).padStart(4, "0"); };
-  function desenharLista(s) {
+  let ctx = null;
+  function desenharLista() {
     const c = $("listaLeg");
     c.innerHTML = "";
     lista.forEach((x, i) => {
-      const lin = document.createElement("div"); lin.className = "lin"; lin.dataset.ini = x.ini.toFixed(2); lin.dataset.nome = x.nome;
+      const lin = document.createElement("div"); lin.className = "lin"; lin.dataset.ini = x.ini.toFixed(2); lin.dataset.nome = x.nome || "";
       const tc = document.createElement("div"); tc.className = "tc"; tc.title = "Ir para este ponto da timeline";
       tc.innerHTML = fmt(x.ini) + "<br>" + fmt(x.fim);
       tc.addEventListener("click", async () => {
-        try { await s.seq.setPlayerPosition(await s.ppro.TickTime.createWithSeconds(x.ini)); } catch (e) { msg("Não consegui mover o cursor: " + (e && e.message ? e.message : e), true); }
+        try { await ctx.seq.setPlayerPosition(await ctx.ppro.TickTime.createWithSeconds(x.ini)); } catch (e) { msg("Não consegui mover o cursor: " + (e && e.message ? e.message : e), true); }
       });
-      const tx = document.createElement("input"); tx.type = "text"; tx.className = "tx"; tx.value = x.texto; tx.disabled = !x.estilo;
-      tx.addEventListener("input", () => lin.classList.toggle("mudou", tx.value.trim() !== x.texto));
-      lin.appendChild(tc); lin.appendChild(tx); c.appendChild(lin);
+      const tx = document.createElement("input"); tx.type = "text"; tx.className = "tx"; tx.value = x.atual; tx.disabled = !x.estilo;
+      const marcar = () => lin.classList.toggle("mudou", !!x.novo || !!x.tempoMudou || x.atual.trim() !== x.texto);
+      tx.addEventListener("input", () => { x.atual = tx.value; marcar(); });
+      marcar();
+      const mais = document.createElement("div"); mais.className = "mais"; mais.textContent = "+";
+      mais.title = "Dividir esta legenda: cria uma nova logo abaixo (ela ocupa a segunda metade do tempo)";
+      mais.style.visibility = x.estilo ? "visible" : "hidden";
+      mais.addEventListener("click", () => {
+        if (x.fim - x.ini < 0.8) return msg("Essa legenda é curta demais para dividir.", true);
+        const meio = Math.round(((x.ini + x.fim) / 2) * 100) / 100;
+        const nova = { nome: "", ini: meio, fim: x.fim, trilha: x.trilha, texto: "", atual: "", estilo: x.estilo, novo: true };
+        x.fim = meio; x.tempoMudou = true;
+        lista.splice(i + 1, 0, nova);
+        desenharLista();
+        const campos = document.querySelectorAll("#listaLeg .tx");
+        if (campos[i + 1]) campos[i + 1].focus();
+        msg("Nova legenda criada abaixo. Escreva o texto e clique em Aplicar.");
+      });
+      lin.appendChild(tc); lin.appendChild(tx); lin.appendChild(mais); c.appendChild(lin);
     });
   }
-  const valoresLista = () => Array.from(document.querySelectorAll("#listaLeg .tx")).map((e) => e.value);
+  async function carregar() {
+    msg("Lendo as legendas...");
+    const s = await lerTodas();
+    ctx = s;
+    if (!s.achados.length) { lista = []; desenharLista(); return msg("Não achei legendas Criativo nessa sequência.", true); }
+    const r = await chamar("/legenda/info_lote", { nomes: s.achados.map((a) => a.nome) });
+    const semTexto = r.infos.filter((x) => !x).length;
+    lista = s.achados.map((a, i) => { const t = r.infos[i] ? r.infos[i].texto : ""; return { ...a, texto: t, atual: t, estilo: r.infos[i] ? r.infos[i].estilo : null }; });
+    desenharLista();
+    msg(lista.length + " legendas carregadas." + (semTexto ? " " + semTexto + " sem texto guardado (feitas por versão antiga): não serão alteradas." : "") + " Corrija e clique em Aplicar. Use o + para dividir uma legenda em duas.");
+  }
   $("btnLerTodas").addEventListener("click", async () => {
-    try {
-      msg("Lendo as legendas...");
-      const s = await lerTodas();
-      if (!s.achados.length) return msg("Não achei legendas Criativo nessa sequência.", true);
-      const r = await chamar("/legenda/info_lote", { nomes: s.achados.map((a) => a.nome) });
-      const semTexto = r.infos.filter((x) => !x).length;
-      lista = s.achados.map((a, i) => ({ ...a, texto: r.infos[i] ? r.infos[i].texto : "", estilo: r.infos[i] ? r.infos[i].estilo : null }));
-      desenharLista(s);
-      msg(lista.length + " legendas carregadas." + (semTexto ? " " + semTexto + " sem texto guardado (feitas por versão antiga): não serão alteradas." : "") + " Corrija e clique em Aplicar.");
-    } catch (e) { msg(e && e.message ? e.message : String(e), true); }
+    try { await carregar(); } catch (e) { msg(e && e.message ? e.message : String(e), true); }
   });
   $("btnAplicarTodas").addEventListener("click", async () => {
     let etapa = "começar";
     try {
       if (!lista.length) return msg("Clique primeiro em Carregar.", true);
-      const linhas = valoresLista();
+      const linhas = lista.map((x) => x.atual);
+      if (lista.some((x) => x.novo && !x.atual.trim())) return msg("Escreva o texto de todas as legendas novas (linhas roxas vazias) antes de aplicar.", true);
       const mudadas = [];
-      linhas.forEach((t, i) => { const n = t.trim(); if (lista[i].estilo && n && n !== lista[i].texto) mudadas.push(i); });
+      lista.forEach((x, i) => { const n = x.atual.trim(); if (x.estilo && n && (x.novo || x.tempoMudou || n !== x.texto)) mudadas.push(i); });
       if (!mudadas.length) return msg("Nenhuma linha foi alterada.");
       etapa = "desenhar as legendas";
       msg("Desenhando " + mudadas.length + " legenda(s)...");
@@ -2099,7 +2118,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       const falhas = [];
       for (const [i, arq] of novos) {
         const item = porNome.get(nomeArq(arq));
-        const alvo = mapa.get(lista[i].nome + "@" + lista[i].ini.toFixed(2));
+        const alvo = lista[i].novo ? { ini: lista[i].ini, trilha: lista[i].trilha } : mapa.get(lista[i].nome + "@" + lista[i].ini.toFixed(2));
         if (!item || !alvo) { falhas.push(i + 1); continue; }
         etapa = "trocar a legenda " + (i + 1);
         const t = await s.ppro.TickTime.createWithSeconds(alvo.ini);
@@ -2108,8 +2127,10 @@ $("btnTesteModelo").addEventListener("click", async () => {
         if (feitas % 5 === 0) msg("Trocando as legendas: " + feitas + " de " + novos.size + "...");
       }
       // atualiza a lista com os novos nomes/textos: peça para carregar de novo
-      lista = [];
-      msg("Pronto: " + feitas + " legenda(s) corrigida(s)." + (falhas.length ? " Não trocadas (linhas): " + falhas.join(", ") + " (o clipe foi movido; carregue de novo)." : "") + " Para corrigir mais, clique em Carregar de novo. (Ctrl+Z desfaz.)");
+      await dormir(1500);
+      let aviso = "";
+      try { await carregar(); } catch (e) { aviso = " (não consegui recarregar a lista: clique em Todas as legendas)"; }
+      msg("Pronto: " + feitas + " legenda(s) corrigida(s)." + (falhas.length ? " Não trocadas (linhas): " + falhas.join(", ") + " (o clipe foi movido; carregue de novo)." : "") + " A lista foi recarregada. (Ctrl+Z desfaz.)" + aviso);
     } catch (e) { msg("Erro ao " + etapa + ": " + (e && e.message ? e.message : e), true); }
   });
 })();
