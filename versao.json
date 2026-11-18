@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.56",
-  "notas": "Criador de estilos de legenda (fonte, cor, contorno, tarja, brilho, animacoes)",
+  "versao": "1.0.57",
+  "notas": "Criador de estilos: linhas clicaveis, fontes com amostra e barras de ajuste",
   "arquivos": {
-    "server.py": "35ff28a28a17bf576daf679f667ffff6c83f62bc58986f07a6025fb5d75a05cd",
-    "painel_index.html": "66b62ae0fd5557f7f73250db614d5ffd6c9f23a06e0a98b12b13efd075bc12f9",
-    "painel_main.js": "879d4b1faf8999c1e47e87d02f02e11281348247b90cedb1ee6031b4ec1e6d14",
+    "server.py": "53afdbd16f51127d3548af0db784d2a1d63ac5593353160bcc2291c62888136e",
+    "painel_index.html": "d88ff3c23f5208a3e765b0ea277c1d3dce655f5b70439c80fd7f0b9479bf540e",
+    "painel_main.js": "fd2ef29649badc7ffe892cf9f940820ea33b10baa0db4e34ee3ea68bdc57206d",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",

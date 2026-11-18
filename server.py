@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.56"
+VERSAO = "1.0.57"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1890,6 +1890,25 @@ def listar_fontes():
     return _CACHE_FONTES
 
 
+def imagem_fonte(fonte_id):
+    """PNG pequeno com o nome da fonte escrito nela mesma (para escolher a fonte no painel)."""
+    from PIL import Image, ImageDraw, ImageFont
+    achadas = {f["id"]: f["nome"] for f in listar_fontes()}
+    if fonte_id not in achadas:
+        raise RuntimeError("fonte desconhecida")
+    pasta = os.path.join(_RAIZ, "cache", "fontes")
+    os.makedirs(pasta, exist_ok=True)
+    arq = os.path.join(pasta, re.sub(r"[^A-Za-z0-9_-]", "_", fonte_id) + ".png")
+    if not os.path.isfile(arq):
+        fonte = _achar_fonte(fonte_id, 24)
+        txt = achadas[fonte_id]
+        larg = min(420, int(fonte.getlength(txt)) + 20)
+        img = Image.new("RGB", (max(60, larg), 36), (27, 27, 38))
+        ImageDraw.Draw(img).text((10, 18), txt, font=fonte, fill=(240, 240, 248), anchor="lm")
+        img.save(arq)
+    return arq
+
+
 def salvar_estilo(nome, defn):
     nome = _nome_seguro(nome)
     if not nome:
@@ -2430,6 +2449,20 @@ class Handler(BaseHTTPRequestHandler):
             todos = [{"nome": n, "def": _limpar_def({"linhas": l}), "usuario": False} for n, l in ESTILOS_OVERLAY.items()]
             todos += [{"nome": n, "def": d, "usuario": True} for n, d in usuario.items()]
             self._responder({"estilos": todos})
+        elif self.path.startswith("/fonte/img"):
+            import urllib.parse
+            try:
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                arq = imagem_fonte(q.get("id", [""])[0])
+                dados = open(arq, "rb").read()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", str(len(dados)))
+                self.end_headers()
+                self.wfile.write(dados)
+            except Exception as e:
+                self._responder({"erro": str(e)}, 404)
         elif self.path == "/estilos/fontes":
             self._responder({"fontes": listar_fontes()})
         elif self.path == "/atualizacao/verificar":

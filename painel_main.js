@@ -2746,14 +2746,26 @@ $("btnTesteModelo").addEventListener("click", async () => {
 
   // ---- componentes ----
   function el(tag, cls, txt) { const e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; }
+  // controle numérico: barra de rolagem + caixinha com o número (dá para arrastar ou digitar)
   function stepper(obj, chave, min, max, passo, sufixo, casas) {
     const w = el("div", "stp");
-    const v = el("div", "v");
-    const fmt = () => { v.textContent = Number(obj[chave]).toFixed(casas || 0).replace(".", ",") + (sufixo || ""); };
-    const mais = (d) => () => { obj[chave] = Math.max(min, Math.min(max, Math.round((obj[chave] + d) * 1000) / 1000)); fmt(); agendarPrevia(); };
-    const b1 = el("div", "b", "−"), b2 = el("div", "b", "+");
-    b1.addEventListener("click", mais(-passo)); b2.addEventListener("click", mais(passo));
-    fmt(); w.appendChild(b1); w.appendChild(v); w.appendChild(b2);
+    const barra = document.createElement("input");
+    barra.type = "range"; barra.min = String(min); barra.max = String(max); barra.step = String(passo); barra.value = String(obj[chave]);
+    barra.style.width = "120px";
+    const caixaNum = document.createElement("input");
+    caixaNum.type = "text"; caixaNum.style.width = "52px"; caixaNum.style.marginLeft = "6px"; caixaNum.style.textAlign = "center";
+    const fmt = (v) => Number(v).toFixed(casas || 0).replace(".", ",");
+    caixaNum.value = fmt(obj[chave]);
+    const aplicar = (v) => { obj[chave] = Math.max(min, Math.min(max, Math.round(v * 1000) / 1000)); agendarPrevia(); };
+    barra.addEventListener("input", () => { aplicar(parseFloat(barra.value)); caixaNum.value = fmt(obj[chave]); });
+    barra.addEventListener("change", () => { aplicar(parseFloat(barra.value)); caixaNum.value = fmt(obj[chave]); });
+    caixaNum.addEventListener("change", () => {
+      const v = parseFloat(String(caixaNum.value).replace(",", "."));
+      if (isFinite(v)) { aplicar(v); barra.value = String(obj[chave]); }
+      caixaNum.value = fmt(obj[chave]);
+    });
+    w.appendChild(barra); w.appendChild(caixaNum);
+    if (sufixo) { const sf = el("div", "v", sufixo.trim()); sf.style.width = "20px"; sf.style.marginLeft = "3px"; w.appendChild(sf); }
     return w;
   }
   function linha(rotulo, controle) { const r = el("div", "ed-lin"); r.appendChild(el("div", "rt", rotulo)); r.appendChild(controle); return r; }
@@ -2787,21 +2799,54 @@ $("btnTesteModelo").addEventListener("click", async () => {
     return s;
   }
 
-  function desenharLinha(l, i) {
-    const c = el("div", "ed-card");
-    const cab = el("div", "ed-lin");
-    cab.appendChild(el("div", "ed-tit", "Linha " + (i + 1)));
-    cab.firstChild.style.flex = "1";
-    if (E.linhas.length > 1) {
-      const x = el("div", "ed-btn verm", "Remover"); x.style.margin = "0"; x.style.padding = "4px 10px";
-      x.addEventListener("click", () => { E.linhas.splice(i, 1); desenhar(); agendarPrevia(); });
-      cab.appendChild(x);
-    }
-    c.appendChild(cab);
-    const opFontes = fontes.length ? fontes.map((f) => [f.id, f.nome]) : [[l.f, l.f]];
-    if (!opFontes.some((o) => o[0] === l.f)) opFontes.unshift([l.f, l.f]);
+  const urlFonte = (id) => SERVICO + "/fonte/img?id=" + encodeURIComponent(id);
+
+  // escolha de fonte com a amostra de cada uma (a lista mostra o nome escrito na própria fonte)
+  function seletorFonte(l) {
+    const w = el("div");
+    const atual = el("div", "ed-fonte");
+    const pintarAtual = () => {
+      atual.innerHTML = "";
+      if (fontes.some((f) => f.id === l.f)) { const im = document.createElement("img"); im.src = urlFonte(l.f); atual.appendChild(im); }
+      else atual.textContent = l.f;
+      atual.appendChild(el("div", "seta", "▾"));
+    };
+    pintarAtual();
+    const lista = el("div", "ed-flista"); lista.style.display = "none";
+    let limite = 40, filtro = "";
+    const pintarLista = () => {
+      lista.innerHTML = "";
+      const busca = document.createElement("input"); busca.type = "text"; busca.placeholder = "Buscar fonte..."; busca.value = filtro;
+      busca.addEventListener("change", () => { filtro = busca.value.trim().toLowerCase(); limite = 40; pintarLista(); });
+      lista.appendChild(busca);
+      const achadas = fontes.filter((f) => !filtro || f.nome.toLowerCase().indexOf(filtro) >= 0);
+      achadas.slice(0, limite).forEach((f) => {
+        const it = el("div", "ed-fitem" + (f.id === l.f ? " sel" : ""));
+        const im = document.createElement("img"); im.src = urlFonte(f.id); it.appendChild(im);
+        it.addEventListener("click", () => { l.f = f.id; lista.style.display = "none"; pintarAtual(); agendarPrevia(); });
+        lista.appendChild(it);
+      });
+      if (achadas.length > limite) {
+        const mais = el("div", "ed-btn", "Mostrar mais (" + (achadas.length - limite) + ")"); mais.style.margin = "4px 0 0";
+        mais.addEventListener("click", () => { limite += 40; pintarLista(); });
+        lista.appendChild(mais);
+      }
+      if (!achadas.length) lista.appendChild(el("div", "dica", "Nenhuma fonte encontrada."));
+    };
+    atual.addEventListener("click", () => {
+      const abrir = lista.style.display === "none";
+      lista.style.display = abrir ? "block" : "none";
+      if (abrir) pintarLista();
+    });
+    w.appendChild(atual); w.appendChild(lista);
+    return w;
+  }
+
+  // opções de uma linha (aparecem só para a linha escolhida)
+  function opcoesLinha(l, i) {
+    const c = el("div", "ed-opc");
     c.appendChild(el("div", "rt", "Fonte")); c.lastChild.style.fontSize = "12px";
-    c.appendChild(selecionar(opFontes, l.f, (v) => { l.f = v; agendarPrevia(); }));
+    c.appendChild(seletorFonte(l));
     c.appendChild(linha("Tamanho", stepper(l, "tam", 2, 30, 0.5, "%", 1)));
     c.appendChild(linha("Altura na tela", stepper(l, "y", 5, 95, 1, "%")));
     c.appendChild(linha("Posição lateral", stepper(l, "x", 10, 90, 1, "%")));
@@ -2809,7 +2854,6 @@ $("btnTesteModelo").addEventListener("click", async () => {
     c.appendChild(linha("Tudo em MAIÚSCULAS", simNao(l, "caixa")));
     c.appendChild(el("div", "rt", "Cor do texto")); c.lastChild.style.fontSize = "12px";
     c.appendChild(campoCor(l, "cor"));
-    // efeitos
     const efeito = (chave, rotulo, extra) => {
       const blk = el("div");
       blk.appendChild(linha(rotulo, simNao(l[chave], "on", () => { desenhar(); })));
@@ -2820,17 +2864,23 @@ $("btnTesteModelo").addEventListener("click", async () => {
     efeito("sombra", "Sombra", (b, o) => { b.appendChild(linha("Intensidade", stepper(o, "forca", 10, 100, 5, "%"))); });
     efeito("tarja", "Tarja atrás do texto", (b, o) => { b.appendChild(campoCor(o, "cor")); b.appendChild(linha("Opacidade", stepper(o, "opac", 10, 100, 5, "%"))); b.appendChild(linha("Cantos arredondados", stepper(o, "raio", 0, 60, 5, "%"))); });
     efeito("brilho", "Brilho (glow)", (b, o) => { b.appendChild(campoCor(o, "cor")); b.appendChild(linha("Intensidade", stepper(o, "forca", 10, 100, 5, "%"))); });
+    if (E.linhas.length > 1) {
+      const x = el("div", "ed-btn verm", "Remover esta linha");
+      x.addEventListener("click", () => { E.linhas.splice(i, 1); E.sel = Math.max(0, i - 1); desenhar(); agendarPrevia(); });
+      c.appendChild(x);
+    }
     return c;
   }
 
   function desenhar() {
+    if (E.sel === undefined || E.sel >= E.linhas.length) E.sel = 0;
     caixa.innerHTML = "";
     const topo = el("div", "ed-card");
     topo.appendChild(el("div", "ed-tit", "Começar de um estilo existente"));
     const bases = [["", "Em branco"]].concat(estilos.map((e) => [e.nome, e.nome + (e.usuario ? " (meu)" : "")]));
     topo.appendChild(selecionar(bases, E.base || "", (v) => {
-      if (!v) { E = { nome: E.nome, base: "", editando: null, linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } }; }
-      else { const e = estilos.find((x) => x.nome === v); const d = doDef(e.def); E = { nome: e.usuario ? e.nome : "", base: v, editando: e.usuario ? e.nome : null, linhas: d.linhas, anim: d.anim }; }
+      if (!v) { E = { nome: E.nome, base: "", editando: null, sel: 0, linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } }; }
+      else { const e = estilos.find((x) => x.nome === v); const d = doDef(e.def); E = { nome: e.usuario ? e.nome : "", base: v, editando: e.usuario ? e.nome : null, sel: 0, linhas: d.linhas, anim: d.anim }; }
       desenhar(); agendarPrevia();
     }));
     topo.appendChild(el("div", "rt", "Nome do estilo")); topo.lastChild.style.fontSize = "12px"; topo.lastChild.style.marginTop = "8px";
@@ -2843,18 +2893,30 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const im = document.createElement("img"); im.id = "edPrevia"; im.className = "ed-prev";
     prev.appendChild(im);
     caixa.appendChild(prev);
-    E.linhas.forEach((l, i) => caixa.appendChild(desenharLinha(l, i)));
+
+    // linhas: clique numa para abrir as opções dela
+    const cl = el("div", "ed-card");
+    cl.appendChild(el("div", "ed-tit", "Linhas do texto (clique numa linha para editar)"));
+    E.linhas.forEach((l, i) => {
+      const nf = (fontes.find((f) => f.id === l.f) || { nome: l.f }).nome;
+      const it = el("div", "ed-item" + (i === E.sel ? " sel" : ""), "Linha " + (i + 1) + "   ·   " + nf + "   ·   " + l.tam + "%");
+      it.addEventListener("click", () => { E.sel = i; desenhar(); agendarPrevia(); });
+      cl.appendChild(it);
+      if (i === E.sel) cl.appendChild(opcoesLinha(l, i));
+    });
     if (E.linhas.length < 5) {
       const mais = el("div", "ed-btn", "+ Adicionar linha");
-      mais.addEventListener("click", () => { E.linhas.push(linhaPadrao(E.linhas.length)); desenhar(); agendarPrevia(); });
-      caixa.appendChild(mais);
+      mais.addEventListener("click", () => { E.linhas.push(linhaPadrao(E.linhas.length)); E.sel = E.linhas.length - 1; desenhar(); agendarPrevia(); });
+      cl.appendChild(mais);
     }
+    caixa.appendChild(cl);
+
     const an = el("div", "ed-card");
     an.appendChild(el("div", "ed-tit", "Animação"));
     an.appendChild(selecionar(ANIMS, E.anim.entrada, (v) => { E.anim.entrada = v; agendarPrevia(); }));
     an.appendChild(linha("Velocidade da entrada (s)", stepper(E.anim, "duracao", 0.1, 1.2, 0.05, " s", 2)));
     an.appendChild(linha("Atraso entre linhas (s)", stepper(E.anim, "atraso", 0, 0.4, 0.02, " s", 2)));
-    an.appendChild(linha("Saída suave (some devagar)", (() => { const o = { v: E.anim.saida !== "nenhuma" }; return simNaoSaida(o); })()));
+    an.appendChild(linha("Saída suave (some devagar)", simNaoSaida({ v: E.anim.saida !== "nenhuma" })));
     caixa.appendChild(an);
     const salvar = el("div", "ed-btn verde", "💾 Salvar estilo");
     salvar.addEventListener("click", salvarEstilo);
