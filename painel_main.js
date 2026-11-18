@@ -2891,7 +2891,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     efeito("brilho", "Brilho (glow)", (b, o) => { b.appendChild(campoCor(o, "cor")); b.appendChild(linha("Intensidade", stepper(o, "forca", 10, 100, 5, "%"))); });
     if (E.linhas.length > 1) {
       const x = el("div", "ed-btn verm", "Remover esta linha");
-      x.addEventListener("click", () => { E.linhas.splice(i, 1); E.sel = Math.max(0, i - 1); desenhar(); agendarPrevia(); });
+      x.addEventListener("click", () => { E.linhas.splice(i, 1); E.marc = []; E.sel = Math.max(0, i - 1); desenhar(); agendarPrevia(); });
       c.appendChild(x);
     }
     return c;
@@ -2939,13 +2939,14 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const pararSeta = () => { if (segurando) { clearTimeout(segurando); clearInterval(segurando); segurando = null; desenhar(); agendarPrevia(); } };
     document.addEventListener("mouseup", pararSeta);
     const mover = (dx, dy, continuo) => {
-      const alvo = (E.sel >= 0 && E.linhas[E.sel]) ? [E.linhas[E.sel]] : E.linhas;
+      const marcadas = E.linhas.filter((l, k) => (E.marc || []).indexOf(k) >= 0);
+      const alvo = marcadas.length ? marcadas : ((E.sel >= 0 && E.linhas[E.sel]) ? [E.linhas[E.sel]] : E.linhas);
       if (!dx && !dy) {
         const mx = alvo.reduce((a, l) => a + l.x, 0) / alvo.length, my = alvo.reduce((a, l) => a + l.y, 0) / alvo.length;
         dx = 50 - mx; dy = 50 - my;
       }
       for (const l of alvo) { l.x = Math.max(5, Math.min(95, Math.round(l.x + dx))); l.y = Math.max(5, Math.min(95, Math.round(l.y + dy))); }
-      E.msgMov = (alvo.length === 1 ? "Linha " + (E.sel + 1) : "Todas as linhas") + ": esquerda " + Math.round(alvo[0].x) + "%, altura " + Math.round(alvo[0].y) + "%";
+      E.msgMov = (alvo.length === 1 ? "1 linha" : alvo.length === E.linhas.length ? "Todas as linhas" : alvo.length + " linhas") + ": esquerda " + Math.round(alvo[0].x) + "%, altura " + Math.round(alvo[0].y) + "%";
       if (continuo) { agendarPrevia(true); return; }
       desenhar(); agendarPrevia();
     };
@@ -2965,18 +2966,38 @@ $("btnTesteModelo").addEventListener("click", async () => {
       moldura.appendChild(b);
     });
     prev.appendChild(moldura);
-    const dica = el("div", "rt", (E.msgMov ? E.msgMov + ". " : "") + (E.sel >= 0 ? "As setas movem a Linha " + (E.sel + 1) + " (a que está aberta)." : "As setas movem todas as linhas juntas.")); dica.style.fontSize = "12px"; dica.style.marginTop = "6px";
+    const nm = (E.marc || []).length; const dica = el("div", "rt", (E.msgMov ? E.msgMov + ". " : "") + (nm ? "As setas movem as " + nm + " linha(s) marcada(s)." : E.sel >= 0 ? "As setas movem a Linha " + (E.sel + 1) + " (a que está aberta)." : "As setas movem todas as linhas juntas.")); dica.style.fontSize = "12px"; dica.style.marginTop = "6px";
     prev.appendChild(dica);
 
     caixa.appendChild(prev);
 
     // linhas: clique numa para abrir as opções dela
     const cl = el("div", "ed-card");
-    cl.appendChild(el("div", "ed-tit", "Linhas do texto (clique numa linha para editar)"));
+    cl.appendChild(el("div", "ed-tit", "Linhas do texto"));
+    const exp = el("div", "rt", "Clique na linha para marcá-la (as setas da prévia movem as marcadas). ▸ abre as opções, ▲▼ mudam a ordem: a de cima fica na frente."); exp.style.fontSize = "12px"; cl.appendChild(exp);
     E.linhas.forEach((l, i) => {
       const nf = (fontes.find((f) => f.id === l.f) || { nome: l.f }).nome;
-      const it = el("div", "ed-item" + (i === E.sel ? " sel" : ""), "Linha " + (i + 1) + "   ·   " + nf + "   ·   " + l.tam + "%");
-      it.addEventListener("click", () => { E.sel = (E.sel === i) ? -1 : i; desenhar(); agendarPrevia(); });
+      const marcada = (E.marc || []).indexOf(i) >= 0;
+      const it = el("div", "ed-item" + (marcada ? " sel" : ""));
+      it.style.display = "flex"; it.style.alignItems = "center";
+      const tx = el("div", "", (marcada ? "✓ " : "") + "Linha " + (i + 1) + "   ·   " + nf + "   ·   " + l.tam + "%"); tx.style.flex = "1";
+      it.appendChild(tx);
+      const mini = (t, fn) => { const b = el("div", "", t); b.style.width = "26px"; b.style.height = "24px"; b.style.lineHeight = "24px"; b.style.textAlign = "center"; b.style.marginLeft = "4px"; b.style.borderRadius = "6px"; b.style.backgroundColor = "#444458"; b.style.color = "#ffffff"; b.addEventListener("click", (ev) => { ev.stopPropagation(); fn(); }); return b; };
+      const trocar = (k) => {
+        const j = i + k; if (j < 0 || j >= E.linhas.length) return;
+        const t = E.linhas[i]; E.linhas[i] = E.linhas[j]; E.linhas[j] = t;
+        E.marc = (E.marc || []).map((m) => (m === i ? j : m === j ? i : m));
+        if (E.sel === i) E.sel = j; else if (E.sel === j) E.sel = i;
+        desenhar(); agendarPrevia();
+      };
+      it.appendChild(mini("▲", () => trocar(-1)));
+      it.appendChild(mini("▼", () => trocar(1)));
+      it.appendChild(mini(i === E.sel ? "▾" : "▸", () => { E.sel = (E.sel === i) ? -1 : i; desenhar(); agendarPrevia(); }));
+      it.addEventListener("click", () => { // clicar na linha marca/desmarca (as setas movem as marcadas)
+        const m = E.marc || []; const k = m.indexOf(i);
+        E.marc = k >= 0 ? m.filter((v) => v !== i) : m.concat([i]);
+        desenhar();
+      });
       cl.appendChild(it);
       if (i === E.sel) cl.appendChild(opcoesLinha(l, i));
     });

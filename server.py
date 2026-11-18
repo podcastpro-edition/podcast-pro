@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.63"
+VERSAO = "1.0.64"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1633,7 +1633,7 @@ def _achar_fonte(nome, tamanho):
 
 # ---------------------------------------------------------------- estilos (embutidos e do usuário)
 
-ANIM_PADRAO = {"entrada": "pop", "duracao": 0.28, "atraso": 0.07, "saida": "fade"}
+ANIM_PADRAO = {"entrada": "pop", "duracao": 0.28, "atraso": 0.07, "saida": "fade", "pilha": "normal"}
 ENTRADAS = ("pop", "fade", "subir", "descer", "zoom", "quicar", "digitar", "nenhuma")
 
 
@@ -1793,6 +1793,7 @@ def _quadro_legenda(sprites, W, H, t, dur, anim=None):
     an = anim or ANIM_PADRAO
     ent, d_ent, atraso = an["entrada"], an["duracao"], an["atraso"]
     quadro = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    pecas = []  # (imagem, x, y) na ordem de aparição
     for i, (img, cx, cy) in enumerate(sprites):
         te = t - i * atraso
         saida_t = dur - t
@@ -1835,6 +1836,10 @@ def _quadro_legenda(sprites, W, H, t, dur, anim=None):
             s.putalpha(s.getchannel("A").point(lambda v, a=alfa: int(v * a)))
         px = int(x0) if corte < 0.999 else int(cx - s.width / 2)
         py = int(cy + dy - s.height / 2)
+        pecas.append((s, px, py))
+    if an.get("pilha") == "topo":  # a primeira linha da lista fica na frente das outras
+        pecas.reverse()
+    for s, px, py in pecas:
         if px < 0 or py < 0 or px + s.width > W or py + s.height > H:  # recorta o que passa da tela
             tela = Image.new("RGBA", (W, H), (0, 0, 0, 0))
             tela.paste(s, (px, py))
