@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.21"
+VERSAO = "1.0.22"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -907,6 +907,31 @@ def palavras_do_trecho(caminho, inicio, fim, modelo, dispositivo, idioma):
     return cache, len(palavras), False
 
 
+
+CAIXA_ALTA = {"Criativo 1": [False, True, False], "Criativo 2": [True, False, True],
+              "Criativo 3": [True, False], "Criativo 4": [False, False, False, False]}
+
+
+def dividir_em_linhas(texto, n):
+    """Reparte o texto em n linhas equilibradas (por letras). Se faltar palavra, completa com vazio."""
+    pal = texto.split()
+    if not pal:
+        return [""] * n
+    n = max(1, min(n, len(pal)))
+    total = sum(len(p) for p in pal) + len(pal) - 1
+    alvo = total / n
+    linhas, atual = [], []
+    for i, p in enumerate(pal):
+        restam_pal = len(pal) - i
+        restam_lin = n - len(linhas)
+        if atual and restam_lin > 1 and (len(" ".join(atual + [p])) > alvo * 1.15 or restam_pal < restam_lin):
+            linhas.append(atual)
+            atual = []
+        atual.append(p)
+    linhas.append(atual)
+    return [" ".join(l) for l in linhas]
+
+
 def legendas_estilizadas(wav, inicio, fim, modo, estilo, pasta_saida, enxuto, semente,
                          cache=None, prefixo=""):
     import random
@@ -919,7 +944,8 @@ def legendas_estilizadas(wav, inicio, fim, modo, estilo, pasta_saida, enxuto, se
     if not palavras:
         raise RuntimeError("Não há falas nesse intervalo.")
     blocos = (legendas_palavra_a_palavra(palavras) if modo == "curtas"
-              else legendas_em_blocos(palavras, max_chars=30, max_dur=3.0))
+              else legendas_em_blocos(palavras, max_chars=(24 if estilo.startswith("Criativo") else 30),
+                                      max_dur=3.0))
     sorteio = random.Random(semente)
     nomes = list(ESTILOS)
     os.makedirs(pasta_saida, exist_ok=True)
@@ -927,6 +953,16 @@ def legendas_estilizadas(wav, inicio, fim, modo, estilo, pasta_saida, enxuto, se
     for i, (ini, fi, texto) in enumerate(blocos):
         texto = re.sub(r"(\w) -(\w)", r"\1-\2", texto)  # "Bem -vindos" -> "Bem-vindos"
         est = sorteio.choice(nomes) if estilo == "aleatorio" else estilo
+        if est in MODELOS_PROJETO:  # modelo artístico guardado em projeto do Premiere
+            cfg = MODELOS_PROJETO[est]
+            n = len(cfg["camadas"])
+            linhas = dividir_em_linhas(texto, n)
+            linhas += [""] * (n - len(linhas))
+            linhas = [(l.upper() if cx else l) for l, cx in zip(linhas, CAIXA_ALTA.get(est, [False] * n))]
+            prep = preparar_modelo_projeto(est, linhas)
+            saida.append({"ini": ini, "fim": fi, "texto": texto, "estilo": est, "tipo": "projeto",
+                          "arquivo": prep["caminho"], "guid": prep["guid"], "nome": prep["nome"]})
+            continue
         personalizado = est.lower().endswith(".mogrt")
         if personalizado:  # template escolhido pelo usuário
             base = est
@@ -1444,6 +1480,7 @@ def aplicar_atualizacao():
         "painel_index.html": os.path.join(_RAIZ, "painel", "index.html"),
         "painel_main.js": os.path.join(_RAIZ, "painel", "main.js"),
     }
+    destinos["base_modelos.prproj"] = os.path.join(_RAIZ, "modelos", "base_modelos.prproj")
     for nome in (info.get("arquivos") or {}):
         if re.fullmatch(r"img_[A-Za-z0-9_-]+\.png", nome):
             destinos[nome] = os.path.join(_RAIZ, "painel", "img", nome[4:])

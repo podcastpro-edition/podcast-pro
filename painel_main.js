@@ -1166,7 +1166,35 @@ const legendar = (modo) => () => semPressa(async () => {
     etapa = "inserir as legendas";
     const editor = await ppro.SequenceEditor.getEditor(seq);
     const falhas = [];
+    // trilha de áudio vazia para os modelos em projeto (eles trazem um áudio mudo junto)
+    let iaLivre = -1;
+    for (let i = nA - 1; i >= 0; i--) if (i !== ia && !audio[i].some(sobrepoe)) { iaLivre = i; break; }
+    const inserirProjeto = async (l) => {
+      const tIni = await ppro.TickTime.createWithSeconds(l.seqIni);
+      if (iaLivre < 0) return "não há trilha de áudio vazia (adicione uma trilha de áudio vazia e tente de novo)";
+      let ultimo = "";
+      for (let tentativa = 1; tentativa <= 3; tentativa++) {
+        try {
+          const antes = (await (await projeto.getRootItem()).getItems()).filter((it) => it.name === l.nome).length;
+          await projeto.importSequences(l.arquivo, [ppro.Guid.fromString(l.guid)]);
+          let achados = [];
+          for (let w = 0; w < 10; w++) {
+            await dormir(500);
+            achados = (await (await projeto.getRootItem()).getItems()).filter((it) => it.name === l.nome);
+            if (achados.length > antes) break;
+          }
+          if (achados.length <= antes) throw new Error("a sequência importada não apareceu");
+          await executar(projeto, "Legenda: colocar", () => editor.createOverwriteItemAction(achados[achados.length - 1], tIni, iv, iaLivre));
+          return "";
+        } catch (e) {
+          ultimo = e && e.message ? e.message : String(e);
+          await dormir(1500);
+        }
+      }
+      return ultimo;
+    };
     const inserir = async (l) => {
+      if (l.tipo === "projeto") return inserirProjeto(l);
       const tIni = await ppro.TickTime.createWithSeconds(l.seqIni);
       let ultimo = "";
       for (let tentativa = 1; tentativa <= 3; tentativa++) {
@@ -1188,6 +1216,22 @@ const legendar = (modo) => () => semPressa(async () => {
       const erro = await inserir(l);
       if (erro) falhas.push("legenda " + (i + 1) + " \"" + l.texto + "\": " + erro);
       await dormir(i >= todas.length - 2 ? 2500 : 1500);
+    }
+    // modelos em projeto: cada clipe entra com ~5 s; aparar o fim para a duração real da fala
+    if (todas.some((l) => l.tipo === "projeto")) {
+      etapa = "ajustar a duração dos modelos";
+      mostrar("Ajustando a duração das legendas...");
+      try {
+        const lista = await (await seq.getVideoTrack(iv)).getTrackItems(1, false);
+        for (const c of lista) {
+          const ini = await sec(() => c.getStartTime()), fimC = await sec(() => c.getEndTime());
+          const l = todas.find((x) => x.tipo === "projeto" && Math.abs(x.seqIni - ini) < 0.06);
+          if (l && l.seqFim > ini + 0.2 && fimC > l.seqFim + 0.05) {
+            const tFim = await ppro.TickTime.createWithSeconds(l.seqFim);
+            await executar(projeto, "Legenda: duração", () => c.createSetEndAction(tFim));
+          }
+        }
+      } catch (e) { falhas.push("ajuste de duração: " + (e && e.message ? e.message : e)); }
     }
     mostrar("Terminando de carregar as legendas no Premiere...");
     await dormir(8000);
@@ -1734,7 +1778,7 @@ $("btnAtualizar").addEventListener("click", async () => {
 (function () {
   const sel = $("estEstilo"), gal = $("galeria");
   if (!sel || !gal) return;
-  const COM_IMAGEM = new Set(["Bold", "Classic", "Film", "Modern", "Simple"]);
+  const COM_IMAGEM = new Set(["Bold", "Classic", "Film", "Modern", "Simple", "Criativo 1", "Criativo 2", "Criativo 3", "Criativo 4"]);
   let assinatura = "";
   function desenhar() {
     const ops = Array.from(sel.options);
@@ -1747,7 +1791,7 @@ $("btnAtualizar").addEventListener("click", async () => {
       card.className = "modelo" + (o.value === sel.value ? " sel" : "");
       if (COM_IMAGEM.has(o.value)) {
         const im = document.createElement("img");
-        im.src = SERVICO + "/painel/img/" + o.value + ".png";
+        im.src = SERVICO + "/painel/img/" + o.value.replace(" ", "_") + ".png";
         im.onerror = () => { const d = document.createElement("div"); d.className = "sem"; d.textContent = o.value; if (im.parentNode) im.parentNode.replaceChild(d, im); };
         card.appendChild(im);
       } else {
