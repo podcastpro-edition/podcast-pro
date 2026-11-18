@@ -721,6 +721,8 @@ const PODCAST = {
   $("btnMaisApres").addEventListener("click", () => criarLinha("ap"));
   $("btnMaisPart").addEventListener("click", () => criarLinha("pt"));
   $("menuPartic").addEventListener("click", () => {
+    AJUSTE_PEDIDO = false;
+    if ($("btnConcluirPartic")) $("btnConcluirPartic").textContent = "✔ Concluir";
     const aberto = $("corpoPartic").style.display !== "none";
     $("corpoPartic").style.display = aberto ? "none" : "block";
     $("setaPartic").textContent = aberto ? "▸" : "▾";
@@ -1146,7 +1148,14 @@ function popup(titulo, texto, botoes) {
   try { window.scrollTo(0, 0); } catch (e) { /* segue */ }
 }
 
+let AJUSTE_PEDIDO = false; // true quando o painel abriu esta seção no meio de uma montagem
+function recolherParticipantes() {
+  $("corpoPartic").style.display = "none";
+  $("setaPartic").textContent = "▸";
+}
 function abrirParticipantes() {
+  AJUSTE_PEDIDO = true;
+  if ($("btnConcluirPartic")) $("btnConcluirPartic").textContent = "✔ Concluir e montar o podcast";
   $("corpoPartic").style.display = "block";
   $("setaPartic").textContent = "▾";
   try { $("menuPartic").scrollIntoView(); } catch (e) { /* segue */ }
@@ -2551,4 +2560,19 @@ $("btnTesteModelo").addEventListener("click", async () => {
 (function () {
   const c = $("carregando");
   if (c) c.addEventListener("click", () => { try { status.scrollIntoView(); } catch (e) { try { window.scrollTo(0, 100000); } catch (x) { /* segue */ } } });
+})();
+
+// "Concluir": recolhe a seção; se ela foi aberta no meio de uma montagem, monta de novo já com os ajustes.
+(function () {
+  const b = $("btnConcluirPartic");
+  if (!b) return;
+  b.addEventListener("click", () => {
+    recolherParticipantes();
+    try { window.scrollTo(0, 0); } catch (e) { /* segue */ }
+    const montar = AJUSTE_PEDIDO;
+    AJUSTE_PEDIDO = false;
+    b.textContent = "✔ Concluir";
+    if (montar) semPressa(fluxoPodcastCompleto);
+    else mostrar("Participantes salvos. Clique em \"Montar podcast completo\" quando quiser.");
+  });
 })();
