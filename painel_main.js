@@ -749,6 +749,27 @@ $("btnPodcast").addEventListener("click", () => semPressa(async () => {
   }
 }));
 
+// Trecho do material que a sequência realmente usa (em segundos, no tempo do arquivo de áudio).
+// Se você deixou só um pedaço na sequência, o painel trabalha só nesse pedaço. null = tudo.
+async function recorteDaTrilha(ppro, sequencia, trilhaIdx) {
+  try {
+    const trilha = await sequencia.getAudioTrack(trilhaIdx);
+    const itens = await trilha.getTrackItems(1, false);
+    if (!itens.length) return null;
+    let ini = Infinity, fim = -Infinity;
+    for (const it of itens) {
+      const a = await it.getInPoint();
+      const b = await it.getOutPoint();
+      const sa = a && a.seconds !== undefined ? a.seconds : Number(a);
+      const sb = b && b.seconds !== undefined ? b.seconds : Number(b);
+      if (isFinite(sa) && isFinite(sb) && sb > sa) { ini = Math.min(ini, sa); fim = Math.max(fim, sb); }
+    }
+    return isFinite(ini) && isFinite(fim) && fim > ini ? [ini, fim] : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // "Automático": olha todas as trilhas de áudio da sequência, descarta o que é ambiente de câmera,
 // efeitos e trilhas vazias, e escolhe os microfones de cada pessoa (ou a trilha master).
 // Nada é apagado: o que não for usado fica só silenciado na sequência nova.
@@ -764,7 +785,9 @@ async function garantirAudio(ppro, sequencia) {
   }
   const cameras = {};
   for (const v of camerasUsadas()) cameras[v] = await caminhoDaTrilha(ppro, sequencia, "V", parseInt(v.slice(1), 10) - 1);
-  const r = await chamar("/avaliar_audios", { faixas, cameras, pessoas: alvo.map((p) => ({ nome: p.nome, camera: p.camera })) });
+  const palpite0 = faixas.find((f) => !Object.values(cameras).includes(f.path));
+  const recorte = palpite0 ? await recorteDaTrilha(ppro, sequencia, palpite0.trilha) : null;
+  const r = await chamar("/avaliar_audios", { faixas, cameras, recorte, pessoas: alvo.map((p) => ({ nome: p.nome, camera: p.camera })) });
   const rot = (i) => "A" + (i + 1);
   if (!r.modo) throw new Error("Não achei nenhuma trilha de áudio com fala na sequência.");
   const cobertura = {};
@@ -807,10 +830,10 @@ async function garantirAudio(ppro, sequencia) {
 }
 
 // Trilha única: separa as vozes sozinho; se não tiver certeza de quem é quem, pergunta.
-async function resolverVozes(ppro, sequencia, wav, cameras) {
+async function resolverVozes(ppro, sequencia, wav, cameras, recorte) {
   const pess = PODCAST.pessoas.map((p) => ({ nome: p.nome, camera: p.camera }));
   mostrar("Separando as vozes da trilha única...\n(pode levar um minuto; não mexa no Premiere)");
-  const r = await chamar("/vozes", { path: wav, canal: PODCAST.pessoas[0].canal, cameras, pessoas: pess, n: pess.length });
+  const r = await chamar("/vozes", { path: wav, canal: PODCAST.pessoas[0].canal, recorte, cameras, pessoas: pess, n: pess.length });
   const mapa = Object.assign({}, r.mapa);
   if (!r.confiavel) {
     const livres = pess.map((p) => p.nome);
@@ -868,10 +891,12 @@ async function montarPodcastInterno(limite, opcoes = {}) {
     const cameras = {};
     for (const v of camerasUsadas()) cameras[v] = await caminhoDaTrilha(ppro, origem, "V", parseInt(v.slice(1), 10) - 1);
 
+    etapa = "ver qual pedaço da sequência usar";
+    const recorte = await recorteDaTrilha(ppro, origem, PODCAST.pessoas[0].trilhaAudio);
     let trechosProntos = null;
     if (PODCAST.vozUnica) {
       etapa = "separar as vozes";
-      trechosProntos = await resolverVozes(ppro, origem, wav, cameras);
+      trechosProntos = await resolverVozes(ppro, origem, wav, cameras, recorte);
     }
 
     etapa = "calcular o plano de cortes";
@@ -883,15 +908,28 @@ async function montarPodcastInterno(limite, opcoes = {}) {
       minimo: lerNumero("minimo"), respiro: lerNumero("respiro"),
       cortarSilencios: PODCAST.cortarSilencios,
       faixas: opcoes.faixas || null,
-      trechosProntos,
+      trechosProntos, recorte,
     });
     const pecas = plano.pecas.filter((p) => p.t < limite);
     const keeps = plano.keeps.filter((k) => k.t < limite);
     if (!pecas.length) return mostrar("O plano não gerou nenhum trecho.", true);
 
+    // equaliza o volume das vozes (gera um áudio novo; o original não é mexido)
+    let eq = null;
+    if ($("eqVol") && $("eqVol").value === "1") {
+      etapa = "equalizar o volume das vozes";
+      mostrar("Equalizando o volume das vozes...\n(pode levar um minuto; não mexa no Premiere)");
+      const canais = Array.from(new Set(PODCAST.pessoas.map((p) => p.canal)));
+      eq = await chamar("/equalizar", PODCAST.vozUnica
+        ? { path: wav, canal: canais[0], trechos: trechosProntos, recorte }
+        : { path: wav, canais, recorte });
+    }
+    const wavLinha = eq ? eq.arquivo : wav;
+    const desloc = eq ? eq.offset : 0;
+
     etapa = "achar os arquivos no projeto";
     const itens = {};
-    for (const [nome, caminho] of Object.entries({ ...cameras, WAV: wav })) {
+    for (const [nome, caminho] of Object.entries({ ...cameras, WAV: wavLinha })) {
       let achado = await acharClipe(ppro, projeto, caminho);
       if (!achado) {
         await projeto.importFiles([caminho]);
@@ -988,8 +1026,8 @@ async function montarPodcastInterno(limite, opcoes = {}) {
       const k = keeps[i];
       mostrar("Montando áudio: trecho " + (i + 1) + " de " + keeps.length + "\nNão mexa no Premiere.");
       etapa = "colocar o áudio do trecho " + (i + 1);
-      const tIni = await ppro.TickTime.createWithSeconds(k.a);
-      const tFim = await ppro.TickTime.createWithSeconds(k.b);
+      const tIni = await ppro.TickTime.createWithSeconds(Math.max(0, k.a - desloc));
+      const tFim = await ppro.TickTime.createWithSeconds(Math.max(0, k.b - desloc));
       await executar(projeto, "Podcast: entrada e saída (áudio)", () => itens.WAV.clip.createSetInOutPointsAction(tIni, tFim));
       const tPos = await ppro.TickTime.createWithSeconds(k.t);
       await executar(projeto, "Podcast: colocar áudio", () => editor.createOverwriteItemAction(itens.WAV.item, tPos, 0, primeiraTrilhaWav));
@@ -1004,7 +1042,7 @@ async function montarPodcastInterno(limite, opcoes = {}) {
     etapa = "silenciar as trilhas que não são microfones";
     let silenciadas = 0, falhaMute = "";
     try {
-      const vivos = new Set(PODCAST.pessoas.map((p) => primeiraTrilhaWav + p.canal));
+      const vivos = new Set(PODCAST.pessoas.map((p) => primeiraTrilhaWav + (eq ? eq.mapa[String(p.canal)] : p.canal)));
       const total = await sequencia.getAudioTrackCount();
       for (let i = 0; i < total; i++) {
         if (vivos.has(i)) continue;
@@ -1023,7 +1061,7 @@ async function montarPodcastInterno(limite, opcoes = {}) {
     const atrasos = Object.entries(plano.atraso).map(([c, v]) => c + " " + v.valor.toFixed(3) + "s").join(" | ");
     mostrar("Pronto. Sequência " + nome + " criada (veja no painel Projeto).\n" +
       totalPecas + " peças de vídeo (3 câmeras), " + keeps.length + " trecho(s) de áudio, " + (await fimSeq()).toFixed(1) + " s (áudio original: " + plano.duracao.toFixed(1) + " s; com imagem em todas as câmeras de " + plano.faixaComImagem[0].toFixed(1) + " a " + plano.faixaComImagem[1].toFixed(1) + " s).\n" +
-      "Atraso das câmeras: " + atrasos + "\nTrilhas silenciadas: " + silenciadas + falhaMute +
+      "Atraso das câmeras: " + atrasos + (recorte ? "\nTrecho usado: " + recorte[0].toFixed(1) + " a " + recorte[1].toFixed(1) + " s do material" : "") + (eq ? "\nVolume equalizado (ajuste em dB): " + Object.entries(eq.ganhos).map(([k, v]) => k + " " + (v > 0 ? "+" : "") + v).join(", ") : "") + "\nTrilhas silenciadas: " + silenciadas + falhaMute +
       (avisos.length ? "\nAVISOS:\n- " + avisos.join("\n- ") : "\nSem avisos.") + "\n" + linhas.join("\n"));
     return true;
   } catch (e) {
