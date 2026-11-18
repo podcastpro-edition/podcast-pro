@@ -651,8 +651,8 @@ const PODCAST = {
 
 (function () {
   if (!$("menuPartic")) return;
-  criarLinha("ap", "Apresentador", "V2", 6); // valores iniciais (projeto do Danilo)
-  criarLinha("pt", "Participante 01", "V3", 3);
+  criarLinha("ap", "Apresentador", "V2", 0); // valores iniciais (projeto do Danilo)
+  criarLinha("pt", "Participante 01", "V3", 1);
   if ($("pGeral")) $("pGeral").value = "V1";
   $("btnMaisApres").addEventListener("click", () => criarLinha("ap"));
   $("btnMaisPart").addEventListener("click", () => criarLinha("pt"));
