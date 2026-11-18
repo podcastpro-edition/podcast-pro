@@ -2775,6 +2775,12 @@ $("btnTesteModelo").addEventListener("click", async () => {
     };
   }
   let ULTIMA_PREVIA = "";
+  function destaqueIdx() { // posições (na ordem de entrada) das linhas marcadas, para a moldura na prévia
+    const marc = (E.marc || []).map((m) => E.linhas[m]).filter(Boolean);
+    const alvo = marc.length ? marc : (E.sel >= 0 && E.linhas[E.sel] ? [E.linhas[E.sel]] : []);
+    const ordem = ordemEntrada();
+    return alvo.map((l) => ordem.indexOf(l)).filter((k) => k >= 0);
+  }
   function agendarPrevia(semReiniciar) {
     if (MODO_CRIATIVO) { agendarPreviaC(); return; }
     if (semReiniciar && timerPrevia) return; // durante o arraste/segurar, atualiza a cada 250 ms
@@ -2782,7 +2788,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     timerPrevia = setTimeout(async () => {
       timerPrevia = null;
       try {
-        await chamar("/estilo/previa", { def: paraDef(), formato: E.formato || "h", guias: !!E.guias });
+        await chamar("/estilo/previa", { def: paraDef(), formato: E.formato || "h", guias: !!E.guias, destaque: destaqueIdx() });
         const im = $("edPrevia");
         ULTIMA_PREVIA = SERVICO + "/painel/img/prev_editor.png?t=" + Date.now();
         if (im) im.src = ULTIMA_PREVIA;
@@ -3067,7 +3073,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const cl = el("div", "ed-card");
     const titL = el("div", "ed-tit", "Linhas do texto"); cl.appendChild(titL);
     const exp = el("div", "rt", "Clique na linha para marcá-la (as setas da prévia movem as marcadas). A seta ▾ abre as opções. Arraste o ≡ para mudar a profundidade: a de cima fica na frente das outras."); exp.style.fontSize = "12px"; cl.appendChild(exp);
-    const limpar = (ev) => { if ((E.marc || []).length && (ev.target === cl || ev.target === titL || ev.target === exp || ev.target === caixa)) { E.marc = []; desenhar(); } };
+    const limpar = (ev) => { if ((E.marc || []).length && (ev.target === cl || ev.target === titL || ev.target === exp || ev.target === caixa)) { E.marc = []; desenhar(); agendarPrevia(); } };
     cl.addEventListener("click", limpar); caixa.addEventListener("click", limpar);
     const itens = [];
     const iniciarArraste = (de) => { // arrastar pela alça ≡: solta onde quiser na lista (cima = na frente)
@@ -3103,7 +3109,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       it.addEventListener("click", () => { // clicar na linha marca/desmarca (as setas movem as marcadas)
         const m = E.marc || []; const k = m.indexOf(i);
         E.marc = k >= 0 ? m.filter((v) => v !== i) : m.concat([i]);
-        desenhar();
+        desenhar(); agendarPrevia();
       });
       const faixa = el("div"); faixa.style.display = "flex"; faixa.style.alignItems = "center";
       faixa.appendChild(alca); it.style.flex = "1"; faixa.appendChild(it);
