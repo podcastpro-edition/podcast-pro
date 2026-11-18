@@ -1862,11 +1862,17 @@ $("btnAtualizar").addEventListener("click", async () => {
     if (ass === assinatura) return;
     assinatura = ass;
     gal.innerHTML = "";
-    const fav = ops.filter((o) => favoritos.has(o.value) || o.value === sel.value);
+    const fav = ops.filter((o) => favoritos.has(o.value));
     const demais = ops.filter((o) => !fav.includes(o));
     const caixaFav = document.createElement("div"); caixaFav.className = "favoritos";
     fav.forEach((o) => caixaFav.appendChild(cartao(o)));
     gal.appendChild(caixaFav);
+    const atual = ops.find((o) => o.value === sel.value);
+    if (atual && !favoritos.has(atual.value)) {
+      const aviso = document.createElement("div"); aviso.className = "dica"; aviso.style.marginTop = "6px";
+      aviso.textContent = "Estilo escolhido: " + atual.textContent + " (está nos modelos ocultos)";
+      gal.appendChild(aviso);
+    }
     if (demais.length) {
       const bt = document.createElement("div"); bt.className = "mini"; bt.style.width = "100%";
       bt.textContent = aberto ? "− Ocultar modelos" : "+ Modelos (" + demais.length + ")";
