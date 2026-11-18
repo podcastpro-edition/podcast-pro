@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.79"
+VERSAO = "1.0.80"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -2276,6 +2276,16 @@ def renderizar_previa(defn, texto, saida_png, W=1280, H=720, recorte=(640, 300),
         dg.line((W // 2, 0, W // 2, H), fill=(0, 220, 255, 200), width=2)  # centro
         dg.line((0, H // 2, W, H // 2), fill=(0, 220, 255, 200), width=2)
         fundo.alpha_composite(g)
+    caixas = []  # posição de cada linha (0 a 1 do quadro) para o painel desenhar a seleção e deixar arrastar
+    _cams = _def_estilo(defn)["linhas"]
+    _lin = dividir_em_linhas(texto, len(_cams))
+    _lin += [""] * (len(_cams) - len(_lin))
+    _vivos = [k for k, t in enumerate(_lin) if t]
+    for n, (img, cx, cy) in enumerate(sp):
+        bb = img.getchannel("A").point(lambda v: 255 if v > 40 else 0).getbbox()
+        if bb and n < len(_vivos):
+            ox, oy = cx - img.width / 2, cy - img.height / 2
+            caixas.append({"k": _vivos[n], "x0": (ox + bb[0]) / W, "y0": (oy + bb[1]) / H, "x1": (ox + bb[2]) / W, "y1": (oy + bb[3]) / H})
     if destaque:  # moldura em volta das linhas marcadas
         from PIL import ImageDraw
         camadas = _def_estilo(defn)["linhas"]
@@ -2303,6 +2313,7 @@ def renderizar_previa(defn, texto, saida_png, W=1280, H=720, recorte=(640, 300),
         fundo = fundo.crop((x0, y0, x0 + cw, y0 + ch))
     os.makedirs(os.path.dirname(saida_png), exist_ok=True)
     fundo.convert("RGB").save(saida_png)
+    return caixas
 
 
 def _fonte_nome(caminho):
@@ -3004,11 +3015,11 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/estilo/previa":
                 try:
                     vert = corpo.get("formato") == "v"
-                    renderizar_previa(corpo.get("def") or {}, corpo.get("texto") or "Seu texto aparece aqui",
+                    caixas = renderizar_previa(corpo.get("def") or {}, corpo.get("texto") or "Seu texto aparece aqui",
                                       os.path.join(_RAIZ, "painel", "img", "prev_editor.png"),
                                       W=720 if vert else 1280, H=1280 if vert else 720, recorte=None,
                                       guias=bool(corpo.get("guias")), destaque=[int(x) for x in (corpo.get("destaque") or [])])
-                    return self._responder({"ok": True})
+                    return self._responder({"ok": True, "caixas": caixas})
                 except Exception as e:
                     return self._responder({"erro": str(e)}, 400)
             if self.path == "/legenda/limpar_disco":

@@ -2788,12 +2788,104 @@ $("btnTesteModelo").addEventListener("click", async () => {
     timerPrevia = setTimeout(async () => {
       timerPrevia = null;
       try {
-        await chamar("/estilo/previa", { def: paraDef(), formato: E.formato || "h", guias: !!E.guias, destaque: destaqueIdx() });
+        const rp = await chamar("/estilo/previa", { def: paraDef(), formato: E.formato || "h", guias: !!E.guias });
+        if (!ARRASTE) { E.caixas = rp.caixas || []; montarMolduras(); }
         const im = $("edPrevia");
         ULTIMA_PREVIA = SERVICO + "/painel/img/prev_editor.png?t=" + Date.now();
         if (im) im.src = ULTIMA_PREVIA;
       } catch (e) { const m = $("edMsg"); if (m) m.textContent = "Prévia: " + (e && e.message ? e.message : e); }
     }, 250);
+  }
+
+  // ---- seleção direto na prévia: moldura em volta das linhas marcadas, arrastar para mover, cantos para mudar o tamanho ----
+  let ARRASTE = null;
+  const geoPrevia = () => {
+    const im = $("edPrevia"); if (!im || !im.offsetWidth) return null;
+    const w = im.offsetWidth, vert = im.getAttribute("data-vert") === "1";
+    return { w, h: w * (vert ? 16 / 9 : 9 / 16) };
+  };
+  const linhasSelecionadas = () => {
+    const m = (E.marc || []).map((i) => E.linhas[i]).filter(Boolean);
+    return m.length ? m : (E.sel >= 0 && E.linhas[E.sel] ? [E.linhas[E.sel]] : []);
+  };
+  function montarMolduras() {
+    const ov = $("edOverlay"), g = geoPrevia();
+    if (!ov || !g || !E) return;
+    ov.innerHTML = "";
+    const ord = ordemEntrada(), sel = linhasSelecionadas();
+    (E.caixas || []).forEach((cx) => {
+      const l = ord[cx.k];
+      if (!l || sel.indexOf(l) < 0) return;
+      const x0 = cx.x0 * g.w - 4, y0 = cx.y0 * g.h - 4, x1 = cx.x1 * g.w + 4, y1 = cx.y1 * g.h + 4;
+      const fr = el("div"); fr.style.position = "absolute"; fr.style.left = Math.round(x0) + "px"; fr.style.top = Math.round(y0) + "px";
+      fr.style.width = Math.max(4, Math.round(x1 - x0)) + "px"; fr.style.height = Math.max(4, Math.round(y1 - y0)) + "px";
+      fr.style.border = "2px solid #ffd60a"; fr.style.boxSizing = "border-box";
+      ov.appendChild(fr);
+      for (const [qx, qy] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) {
+        const h = el("div"); h.style.position = "absolute"; h.style.width = "10px"; h.style.height = "10px"; h.style.left = Math.round(qx - 5) + "px"; h.style.top = Math.round(qy - 5) + "px";
+        h.style.backgroundColor = "#ffffff"; h.style.border = "2px solid #ffd60a"; h.style.boxSizing = "border-box";
+        ov.appendChild(h);
+      }
+    });
+  }
+  function aoApertarPrevia(ev) {
+    const g = geoPrevia(), ov = $("edOverlay"); if (!g || !ov || !E) return;
+    try { ev.preventDefault(); } catch (e) { /* segue */ }
+    const r = ov.getBoundingClientRect(), px = ev.clientX - r.left, py = ev.clientY - r.top;
+    const ord = ordemEntrada(); let sel = linhasSelecionadas();
+    const caixaDe = (l) => (E.caixas || []).find((c) => ord[c.k] === l);
+    let modo = null, ref = null;
+    for (const l of sel) { // cantos das linhas selecionadas = mudar tamanho
+      const c = caixaDe(l); if (!c) continue;
+      for (const [qx, qy] of [[c.x0, c.y0], [c.x1, c.y0], [c.x0, c.y1], [c.x1, c.y1]]) {
+        if (Math.abs(px - qx * g.w) <= 11 && Math.abs(py - qy * g.h) <= 11) { modo = "escala"; ref = c; break; }
+      }
+      if (modo) break;
+    }
+    if (!modo) { // clicou numa linha? (a da frente primeiro)
+      let achou = null;
+      for (const l of E.linhas) {
+        const c = caixaDe(l); if (!c) continue;
+        if (px >= c.x0 * g.w - 6 && px <= c.x1 * g.w + 6 && py >= c.y0 * g.h - 6 && py <= c.y1 * g.h + 6) { achou = l; break; }
+      }
+      if (!achou) { E.marc = []; montarMolduras(); desenhar(); agendarPrevia(); return; }
+      if (sel.indexOf(achou) < 0) { E.marc = [E.linhas.indexOf(achou)]; sel = [achou]; montarMolduras(); }
+      modo = "mover";
+    }
+    const alvos = sel.map((l) => { const c = caixaDe(l); return { l, c, c0: c ? { x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1 } : null, x0: l.x, y0: l.y, tam0: l.tam }; });
+    const centro = ref ? { x: (ref.x0 + ref.x1) / 2 * g.w, y: (ref.y0 + ref.y1) / 2 * g.h } : null;
+    ARRASTE = { modo, g, px0: px, py0: py, alvos, centro, r0: centro ? Math.max(8, Math.hypot(px - centro.x, py - centro.y)) : 1, ov };
+    document.addEventListener("mousemove", aoMoverPrevia);
+    document.addEventListener("mouseup", aoSoltarPrevia);
+  }
+  function aoMoverPrevia(ev) {
+    const A = ARRASTE; if (!A) return;
+    const r = A.ov.getBoundingClientRect(), px = ev.clientX - r.left, py = ev.clientY - r.top;
+    if (A.modo === "mover") {
+      for (const a of A.alvos) {
+        a.l.x = Math.max(5, Math.min(95, Math.round(a.x0 + (px - A.px0) / A.g.w * 100)));
+        a.l.y = Math.max(5, Math.min(95, Math.round(a.y0 + (py - A.py0) / A.g.h * 100)));
+        if (a.c) { const dx = (a.l.x - a.x0) / 100, dy = (a.l.y - a.y0) / 100; a.c.x0 = a.c0.x0 + dx; a.c.x1 = a.c0.x1 + dx; a.c.y0 = a.c0.y0 + dy; a.c.y1 = a.c0.y1 + dy; }
+      }
+    } else {
+      const f = Math.max(0.2, Math.min(6, Math.hypot(px - A.centro.x, py - A.centro.y) / A.r0));
+      for (const a of A.alvos) {
+        a.l.tam = Math.max(2, Math.min(30, Math.round(a.tam0 * f * 2) / 2));
+        if (a.c) {
+          const fr = a.l.tam / a.tam0, cx = (a.c0.x0 + a.c0.x1) / 2, cy = (a.c0.y0 + a.c0.y1) / 2, hw = (a.c0.x1 - a.c0.x0) / 2 * fr, hh = (a.c0.y1 - a.c0.y0) / 2 * fr;
+          a.c.x0 = cx - hw; a.c.x1 = cx + hw; a.c.y0 = cy - hh; a.c.y1 = cy + hh;
+        }
+      }
+    }
+    montarMolduras();
+    agendarPrevia(true);
+  }
+  function aoSoltarPrevia() {
+    document.removeEventListener("mousemove", aoMoverPrevia);
+    document.removeEventListener("mouseup", aoSoltarPrevia);
+    if (!ARRASTE) return;
+    ARRASTE = null;
+    desenhar(); agendarPrevia();
   }
 
   // ---- componentes ----
@@ -2989,6 +3081,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const ant = $("edPrevia");
     if (ant && ant.offsetWidth) LARG_PREV = ant.offsetWidth / (ant.getAttribute("data-vert") === "1" ? 0.4 : 1);
     desenharInterno();
+    montarMolduras();
     const volta = () => { try { window.scrollTo(0, y0); } catch (e) { /* segue */ } try { document.documentElement.scrollTop = y0; document.body.scrollTop = y0; } catch (e) { /* segue */ } };
     volta(); setTimeout(volta, 60); setTimeout(volta, 350);
   }
@@ -3032,6 +3125,9 @@ $("btnTesteModelo").addEventListener("click", async () => {
     if (LARG_PREV) im.style.minHeight = Math.round(LARG_PREV * (vert ? 0.4 * 16 / 9 : 9 / 16)) + "px"; // reserva o espaço enquanto a imagem carrega
     if (ULTIMA_PREVIA) im.src = ULTIMA_PREVIA; // mantém a imagem anterior até a nova ficar pronta (sem piscar)
     moldura.appendChild(im);
+    const ovl = el("div"); ovl.id = "edOverlay"; ovl.style.position = "absolute"; ovl.style.left = "0px"; ovl.style.top = "0px"; ovl.style.right = "0px"; ovl.style.bottom = "0px";
+    ovl.addEventListener("mousedown", aoApertarPrevia);
+    moldura.appendChild(ovl);
     // setas dentro da prévia: movem a linha selecionada (ou todas, se nenhuma estiver aberta)
     let segurando = null;
     const pararSeta = () => { if (segurando) { clearTimeout(segurando); clearInterval(segurando); segurando = null; desenhar(); agendarPrevia(); } };
