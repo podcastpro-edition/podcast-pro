@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.48"
+VERSAO = "1.0.49"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -686,23 +686,47 @@ def avaliar_audios(faixas, cameras, pessoas, recorte=None):
 
     falas = [i for i in info if i["tipo"] == "fala"]
     master = None
+    misturas = []
     if len(falas) >= 3:
-        for cand in sorted(falas, key=lambda i: -i["cobertura"]):
-            outros = [i for i in falas if i is not cand]
-            n = min(len(envs[i["trilha"]][0]) for i in falas)
-            ativo = lambda i: envs[i["trilha"]][0][:n] > envs[i["trilha"]][1]
+        # "mistura" = trilha que tem fala em (quase) todos os momentos em que QUALQUER outra tem
+        # e fala bem mais tempo que a trilha típica: é a master ou um ambiente com todas as vozes.
+        n = min(len(envs[i["trilha"]][0]) for i in falas)
+        ativos = {i["trilha"]: envs[i["trilha"]][0][:n] > envs[i["trilha"]][1] for i in falas}
+        mediana = float(np.percentile([i["cobertura"] for i in falas], 25))
+        for cand in falas:
             uniao = np.zeros(n, dtype=bool)
-            for o in outros:
-                uniao |= ativo(o)
-            if uniao.any() and ativo(cand)[uniao].mean() >= 0.85 and \
-               cand["cobertura"] >= 1.1 * max(o["cobertura"] for o in outros):
-                master = cand
-                break
+            for o in falas:
+                if o is not cand:
+                    uniao |= ativos[o["trilha"]]
+            if uniao.any() and ativos[cand["trilha"]][uniao].mean() >= 0.85 and cand["cobertura"] >= 1.2 * mediana:
+                misturas.append(cand)
+        if misturas:
+            master = max(misturas, key=lambda i: (i["cobertura"], i["nivel"]))
+            for m in misturas:
+                if m is not master:
+                    m["tipo"] = "mistura"
     if master:
         master["tipo"] = "master"
-    mics = [i for i in falas if i is not master]
+    mics = [i for i in falas if i is not master and i not in misturas]
     for m in mics:
         m["tipo"] = "microfone"
+    # microfone de verdade = em algum momento é a trilha mais forte (a pessoa fala nele). Trilhas
+    # de ambiente/mistura quase nunca "dominam" e não contam como pessoa.
+    if len(mics) >= 3:
+        nn = min(len(envs[m["trilha"]][0]) for m in mics)
+        mat = np.vstack([envs[m["trilha"]][0][:nn] for m in mics])
+        prov = []
+        for mi, m in enumerate(mics):
+            outros_max = np.max(np.delete(mat, mi, axis=0), axis=0)
+            dom = (mat[mi] > envs[m["trilha"]][1]) & (mat[mi] - outros_max > 6)
+            m["dominancia"] = round(float(dom.mean()), 3)
+            if m["dominancia"] >= 0.05:
+                prov.append(m)
+        if len(prov) >= max(2, len(pessoas)):
+            for m in mics:
+                if m not in prov:
+                    m["tipo"] = "ambiente"
+            mics = prov
 
     res = {"faixas": [{k: v for k, v in i.items() if k != "path"} for i in info],
            "master": master["trilha"] if master else None,

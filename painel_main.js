@@ -678,12 +678,13 @@ function lerPessoas() {
 }
 
 // Pergunta se quer adicionar as pessoas que faltam (mais vozes/microfones do que linhas escritas).
+let LISTA_CONFIRMADA = false; // true depois que você clica em Concluir (ou em Continuar): não pergunto de novo
 const PARAR_FLUXO = new Error("Escolha a câmera da pessoa nova em \"Selecionar participantes e apresentador\" e clique em Montar de novo.");
-function perguntarPessoasFaltando(achadas, escritas, o_que) {
+function perguntarPessoasFaltando(achadas, escritas, o_que, detalhe) {
   const faltam = achadas - escritas;
   return new Promise((resolve) => {
     popup("Achei " + achadas + " " + o_que + ", mas só " + escritas + " pessoas estão escritas",
-      "Sem a pessoa na lista, ela não aparece nos cortes de câmera. Adicione " + (faltam === 1 ? "a pessoa que falta" : "as " + faltam + " pessoas que faltam") + " e escolha a câmera dela em \"Selecionar participantes e apresentador\"; depois clique em Montar de novo.",
+      (detalhe ? detalhe + " " : "") + "Sem a pessoa na lista, ela não aparece nos cortes de câmera. Adicione " + (faltam === 1 ? "a pessoa que falta" : "as " + faltam + " pessoas que faltam") + " e escolha a câmera dela em \"Selecionar participantes e apresentador\"; depois clique em Montar de novo.",
       [{ rotulo: "Adicionar e escolher a câmera", cor: "azul", acao: () => {
           const usadas = new Set(lerPessoas().pessoas.map((p) => p.camera));
           usadas.add($("pGeral") ? $("pGeral").value : "V1");
@@ -695,7 +696,7 @@ function perguntarPessoasFaltando(achadas, escritas, o_que) {
           abrirParticipantes();
           resolve(true);
         } },
-       { rotulo: "Continuar só com " + escritas, acao: () => resolve(false) }]);
+       { rotulo: "Continuar só com " + escritas, acao: () => { LISTA_CONFIRMADA = true; resolve(false); } }]);
   });
 }
 
@@ -718,8 +719,8 @@ const PODCAST = {
   criarLinha("ap", "Apresentador", "V2"); // áudio "Automático": o painel escolhe a melhor trilha
   criarLinha("pt", "Participante 01", "V3");
   if ($("pGeral")) $("pGeral").value = "V1";
-  $("btnMaisApres").addEventListener("click", () => criarLinha("ap"));
-  $("btnMaisPart").addEventListener("click", () => criarLinha("pt"));
+  $("btnMaisApres").addEventListener("click", () => { LISTA_CONFIRMADA = false; criarLinha("ap"); });
+  $("btnMaisPart").addEventListener("click", () => { LISTA_CONFIRMADA = false; criarLinha("pt"); });
   $("menuPartic").addEventListener("click", () => {
     AJUSTE_PEDIDO = false;
     if ($("btnConcluirPartic")) $("btnConcluirPartic").textContent = "✔ Concluir";
@@ -845,8 +846,9 @@ async function garantirAudio(ppro, sequencia) {
   const r0 = await chamar("/avaliar_audios", { faixas, cameras, recorte, pessoas: alvo.map((p) => ({ nome: p.nome, camera: p.camera })) });
   const r = r0;
   const rot = (i) => "A" + (i + 1);
-  if (r.modo === "microfones" && r.mics.length > lerPessoas().pessoas.length) {
-    if (await perguntarPessoasFaltando(r.mics.length, lerPessoas().pessoas.length, "microfones com fala")) throw PARAR_FLUXO;
+  if (!LISTA_CONFIRMADA && r.modo === "microfones" && r.mics.length > lerPessoas().pessoas.length) {
+    const lista = r.mics.map((tr) => rot(tr)).join(", ");
+    if (await perguntarPessoasFaltando(r.mics.length, lerPessoas().pessoas.length, "microfones com fala", "Trilhas: " + lista + ".")) throw PARAR_FLUXO;
   }
   if (!r.modo) throw new Error("Não achei nenhuma trilha de áudio com fala na sequência.");
   const cobertura = {};
@@ -893,7 +895,7 @@ async function resolverVozes(ppro, sequencia, wav, cameras, recorte) {
   const pess = PODCAST.pessoas.map((p) => ({ nome: p.nome, camera: p.camera }));
   mostrar("Separando as vozes da trilha única...\n(pode levar um minuto; não mexa no Premiere)");
   const r = await chamar("/vozes", { path: wav, canal: PODCAST.pessoas[0].canal, recorte, cameras, pessoas: pess, n: pess.length });
-  if (r.kSugerido && r.kSugerido > pess.length) {
+  if (!LISTA_CONFIRMADA && r.kSugerido && r.kSugerido > pess.length) {
     if (await perguntarPessoasFaltando(r.kSugerido, pess.length, "vozes diferentes")) throw PARAR_FLUXO;
   }
   const mapa = Object.assign({}, r.mapa);
@@ -2571,6 +2573,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     try { window.scrollTo(0, 0); } catch (e) { /* segue */ }
     const montar = AJUSTE_PEDIDO;
     AJUSTE_PEDIDO = false;
+    LISTA_CONFIRMADA = true;
     b.textContent = "✔ Concluir";
     if (montar) semPressa(fluxoPodcastCompleto);
     else mostrar("Participantes salvos. Clique em \"Montar podcast completo\" quando quiser.");
