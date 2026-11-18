@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.20"
+VERSAO = "1.0.21"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -730,14 +730,53 @@ def gerar_mogrt(base, texto, destino, nome="AutoCut Legenda", enxuto=False, dura
 # o painel importa essa cópia e coloca a sequência na timeline.
 # ---------------------------------------------------------------------------
 MODELOS_PROJETO = {
+    "Criativo 1": {
+        "base": "base_modelos.prproj",
+        "guid": "4446a599-d4e4-4334-93de-6a82fcaab2ac",
+        "nome_seq": "MODELO_1",
+        "exemplo": ["stories com", "LEGENDAS", "tutorial//como ativar?"],
+        "camadas": [30, 31, 32],
+        "layout": [
+            {"linha": 0, "pos": (0.5, 0.30), "esc": 55},
+            {"linha": 2, "pos": (0.5, 0.72), "esc": 70},
+            {"linha": 1, "pos": (0.5, 0.50), "esc": 150},
+        ],
+    },
     "Criativo 2": {
         "base": "base_modelos.prproj",
         "guid": "e1b6e694-43e2-4d4e-863b-e5e56187eda6",
+        "nome_seq": "MODELO_2",
+        "exemplo": ["LEGENDAS", "criativas e", "ANIMADAS"],
         "camadas": [18, 19, 20],
         "layout": [
             {"pos": (0.5, 0.32)},
             {"pos": (0.5, 0.50), "rot": -6},
             {"pos": (0.5, 0.68)},
+        ],
+    },
+    "Criativo 3": {
+        "base": "base_modelos.prproj",
+        "guid": "1a1503bd-4a30-476c-8090-dc911e510ca3",
+        "nome_seq": "MODELO_3",
+        "exemplo": ["ONDE NÃO", "colocar"],
+        "camadas": [27, 28, 29],
+        "layout": [
+            {"linha": 0, "pos": (0.5, 0.40), "esc": 140},
+            {"linha": 1, "pos": (0.5, 0.62), "esc": 130, "rot": -4},
+            {"linha": 2, "pos": (0.5, 0.90)},
+        ],
+    },
+    "Criativo 4": {
+        "base": "base_modelos.prproj",
+        "guid": "f882ad1f-cfaa-46a0-8d28-46d807284214",
+        "nome_seq": "MODELO_4",
+        "exemplo": ["Por que", "legendar", "vídeos", "para redes sociais?"],
+        "camadas": [33, 34, 35, 36],
+        "layout": [
+            {"pos": (0.5, 0.30), "esc": 70},
+            {"pos": (0.5, 0.45), "esc": 110},
+            {"pos": (0.5, 0.62), "esc": 110},
+            {"pos": (0.5, 0.78), "esc": 50},
         ],
     },
 }
@@ -811,16 +850,17 @@ def preparar_modelo_projeto(nome, linhas):
     with gzip.open(base, "rb") as g:
         x = g.read().decode("utf-8", errors="replace")
     todas = _prproj_camadas(x)
-    linhas = list(linhas) + [""] * (len(cfg["camadas"]) - len(linhas))
+    linhas = list(linhas) + [""] * (len(cfg["camadas"]) + 2)
+    for idx in cfg["camadas"]:  # 1ª passada: camadas que só apontam para outra ganham cópia própria
+        x = _prproj_materializar(x, x.find('ObjectID="%s"' % todas[idx]["0"]))
     for i, idx in enumerate(cfg["camadas"]):
         c = todas[idx]
         k = x.find('ObjectID="%s"' % c["0"])
-        x = _prproj_materializar(x, k)
         m = _BL.search(x, k)
         b = base64.b64decode(re.sub(r"\s", "", m.group(3)))
-        n = _fb_trocar_texto(b, "Nova camada de texto", linhas[i])
-        x = x[:m.start(3)] + base64.b64encode(n).decode() + x[m.end(3):]
         lay = cfg["layout"][i]
+        n = _fb_trocar_texto(b, "Nova camada de texto", linhas[lay.get("linha", i)])
+        x = x[:m.start(3)] + base64.b64encode(n).decode() + x[m.end(3):]
         if "pos" in lay:
             x = _prproj_valor(x, c["2"], "-91445760000000000,%s:%s,0,0,0,0,0,0,5,4,0,0,0,0" % lay["pos"])
         if "esc" in lay:
@@ -829,11 +869,11 @@ def preparar_modelo_projeto(nome, linhas):
             x = _prproj_valor(x, c["6"], "-91445760000000000,%s.,0,0,0,0,0,0" % lay["rot"])
     pasta = os.path.join(_RAIZ, "modelos", "gerados")
     os.makedirs(pasta, exist_ok=True)
-    chave = hashlib.md5(("|".join([nome] + linhas)).encode("utf-8")).hexdigest()[:10]
+    chave = hashlib.md5(("|".join([nome] + [str(l) for l in linhas])).encode("utf-8")).hexdigest()[:10]
     destino = os.path.join(pasta, "%s_%s.prproj" % (nome.replace(" ", "_"), chave))
     with gzip.open(destino, "wb") as g:
         g.write(x.encode("utf-8"))
-    return {"caminho": destino, "guid": cfg["guid"], "nome": "MODELO_2"}
+    return {"caminho": destino, "guid": cfg["guid"], "nome": cfg["nome_seq"]}
 
 
 

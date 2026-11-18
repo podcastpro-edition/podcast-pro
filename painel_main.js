@@ -1764,7 +1764,13 @@ $("btnAtualizar").addEventListener("click", async () => {
 })();
 
 
-// ---- Teste: importar uma sequência de outro projeto (.prproj) e colocar na timeline ----
+// ---- Teste: importar modelos de legenda guardados em projeto do Premiere e colocar na timeline ----
+const MODELOS_TESTE = [
+  ["Criativo 1", ["stories com", "LEGENDAS", "tutorial//como ativar?"]],
+  ["Criativo 2", ["LEGENDAS", "criativas e", "ANIMADAS"]],
+  ["Criativo 3", ["ONDE NÃO", "colocar"]],
+  ["Criativo 4", ["Por que", "legendar", "vídeos", "para redes sociais?"]],
+];
 $("btnTesteModelo").addEventListener("click", async () => {
   const msg = (t, e) => { $("msgModelo").textContent = t; $("msgModelo").style.color = e ? "#ff8a80" : "#9a9a9a"; };
   let etapa = "começar";
@@ -1773,23 +1779,27 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const projeto = await ppro.Project.getActiveProject();
     const sequencia = await projeto.getActiveSequence();
     if (!sequencia) return msg("Abra uma sequência primeiro.", true);
-    etapa = "preparar o modelo (programa local)";
-    const prep = await chamar("/modelo/preparar", { modelo: "Criativo 2", linhas: ["LEGENDAS", "criativas e", "ANIMADAS"] });
-    etapa = "importar a sequência";
-    const ok = await projeto.importSequences(prep.caminho, [ppro.Guid.fromString(prep.guid)]);
-    await dormir(2000);
-    etapa = "procurar a sequência importada";
-    const itens = await (await projeto.getRootItem()).getItems();
-    const iguais = itens.filter((it) => it.name === prep.nome);
-    msg("importSequences devolveu: " + ok + ". Sequências '" + prep.nome + "' no projeto: " + iguais.length);
-    if (!iguais.length) return;
-    const novos = [{ it: iguais[iguais.length - 1], nome: prep.nome }];
-    etapa = "colocar na timeline";
     const editor = await ppro.SequenceEditor.getEditor(sequencia);
-    let t;
-    try { t = await sequencia.getPlayerPosition(); } catch (e) { t = await sequencia.getEndTime(); }
-    await executar(projeto, "Modelo: colocar", () => editor.createOverwriteItemAction(novos[0].it, t, 2, 2));
-    msg("Pronto: importei e coloquei na timeline (V3). Confira se apareceu o gráfico com 3 textos.");
+    let t0 = 0;
+    try { t0 = (await sequencia.getPlayerPosition()).seconds; } catch (e) { t0 = 0; }
+    let feitos = 0;
+    for (let i = 0; i < MODELOS_TESTE.length; i++) {
+      const [nome, linhas] = MODELOS_TESTE[i];
+      etapa = nome + ": preparar";
+      const prep = await chamar("/modelo/preparar", { modelo: nome, linhas });
+      etapa = nome + ": importar";
+      await projeto.importSequences(prep.caminho, [ppro.Guid.fromString(prep.guid)]);
+      await dormir(2000);
+      const itens = await (await projeto.getRootItem()).getItems();
+      const iguais = itens.filter((it) => it.name === prep.nome);
+      if (!iguais.length) return msg(nome + ": a sequência importada não apareceu.", true);
+      etapa = nome + ": colocar na timeline";
+      const t = await ppro.TickTime.createWithSeconds(t0 + i * 6);
+      await executar(projeto, "Modelo: colocar", () => editor.createOverwriteItemAction(iguais[iguais.length - 1], t, 2, 2));
+      feitos++;
+      msg("Colocados " + feitos + " de " + MODELOS_TESTE.length + "...");
+    }
+    msg("Pronto: " + feitos + " modelos na timeline (V3), um a cada 6 segundos, a partir do cursor.");
   } catch (e) {
     msg("Falhou em '" + etapa + "': " + (e && e.message ? e.message : e), true);
   }
