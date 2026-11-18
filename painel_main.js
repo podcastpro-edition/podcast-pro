@@ -3073,11 +3073,18 @@ $("btnTesteModelo").addEventListener("click", async () => {
     caixa.appendChild(cl);
 
     const an = el("div", "ed-card");
-    an.appendChild(el("div", "ed-tit", "Animação"));
-    an.appendChild(selecionar(ANIMS, E.anim.entrada, (v) => { E.anim.entrada = v; agendarPrevia(); }));
-    an.appendChild(linha("Velocidade da entrada (s)", stepper(E.anim, "duracao", 0.1, 1.2, 0.05, " s", 2)));
-    an.appendChild(linha("Atraso entre linhas (s)", stepper(E.anim, "atraso", 0, 0.4, 0.02, " s", 2)));
-    an.appendChild(linha("Saída suave (some devagar)", simNaoSaida({ v: E.anim.saida !== "nenhuma" })));
+    const cab = el("div", "ed-tit"); cab.style.display = "flex"; cab.style.alignItems = "center"; cab.style.cursor = "pointer"; cab.style.margin = "0";
+    const tt = el("div", "", "Animação"); tt.style.flex = "1";
+    const sa = el("div", "", "▾"); sa.style.color = E.animAberta ? "#b9acff" : "#8a8a9c"; sa.style.paddingRight = "6px";
+    cab.appendChild(tt); cab.appendChild(sa);
+    cab.addEventListener("click", () => { E.animAberta = !E.animAberta; desenhar(); agendarPrevia(); });
+    an.appendChild(cab);
+    if (E.animAberta) {
+      an.appendChild(selecionar(ANIMS, E.anim.entrada, (v) => { E.anim.entrada = v; agendarPrevia(); }));
+      an.appendChild(linha("Velocidade da entrada (s)", stepper(E.anim, "duracao", 0.1, 1.2, 0.05, " s", 2)));
+      an.appendChild(linha("Atraso entre linhas (s)", stepper(E.anim, "atraso", 0, 0.4, 0.02, " s", 2)));
+      an.appendChild(linha("Saída suave (some devagar)", simNaoSaida({ v: E.anim.saida !== "nenhuma" })));
+    }
     caixa.appendChild(an);
     const salvar = el("div", "ed-btn verde", "💾 Salvar estilo");
     salvar.addEventListener("click", salvarEstilo);

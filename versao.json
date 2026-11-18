@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.69",
-  "notas": "Criador: clicar fora das linhas desmarca",
+  "versao": "1.0.70",
+  "notas": "Criador: Animacao vira menu que abre ao clicar",
   "arquivos": {
-    "server.py": "4c04eb044d9aaa3e568d0c92447df3c95a89a1dcb33272f22c8cb36a22a42d4d",
+    "server.py": "f87475153fa896af46b0e35f8b1f3a24f800586e5a7a58812759a875011936ec",
     "painel_index.html": "f14568ce5d779c837164a449bfe7cb0087568de22dd204291d18c3f9760abcb8",
-    "painel_main.js": "608bcc634ae7883d3e8986bfb203ade9622b97b998ef7bdbe62586d7e1790017",
+    "painel_main.js": "529f6a9f1e8e2357abe5301791d3a8e2ee8e09d7b4f78258446025170b2ad51e",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",
