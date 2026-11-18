@@ -2287,7 +2287,7 @@ $("btnAtualizar").addEventListener("click", async () => {
     });
     nome.appendChild(est);
     card.appendChild(nome);
-    card.addEventListener("click", () => { sel.value = o.value; assinatura = ""; desenhar(); });
+    card.addEventListener("click", () => { sel.value = o.value; assinatura = ""; desenhar(); try { if (window.ppEscolheuEstilo) window.ppEscolheuEstilo(o.value); } catch (e) { /* segue */ } });
     return card;
   }
   function desenhar() {
@@ -3187,6 +3187,16 @@ $("btnTesteModelo").addEventListener("click", async () => {
     window.ppEstilosImg = meus;
   }
 
+  function carregarBase(nome) { // abre as opções de um estilo da galeria no criador
+    const e = estilos.find((x) => x.nome === nome);
+    if (!e) return false;
+    const d = ordenarPorProfundidade(doDef(e.def), e.def);
+    E = { nome: e.usuario ? e.nome : "", base: e.nome, editando: e.usuario ? e.nome : null, sel: 0, marc: [], linhas: d.linhas, anim: d.anim };
+    desenhar(); agendarPrevia();
+    return true;
+  }
+  window.ppEscolheuEstilo = (nome) => { if (aberto && !MODO_CRIATIVO && E) carregarBase(nome); }; // trocou o estilo na galeria com o criador aberto
+
   botao.addEventListener("click", async () => {
     aberto = !aberto;
     caixa.style.display = aberto ? "block" : "none";
@@ -3196,7 +3206,9 @@ $("btnTesteModelo").addEventListener("click", async () => {
       if (!estilos.length) await recarregarEstilos();
       if (!fontes.length) { try { fontes = (await (await fetch(SERVICO + "/estilos/fontes")).json()).fontes || []; } catch (e) { fontes = []; } }
       if (!E) E = { nome: "", base: "", editando: null, linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } };
-      desenhar(); agendarPrevia();
+      // se um estilo está escolhido na galeria, já abre com as opções dele para editar
+      if (sel && sel.value && sel.value !== E.base && sel.value !== E.editando) carregarBase(sel.value);
+      else { desenhar(); agendarPrevia(); }
     } catch (e) { caixa.textContent = "Não consegui abrir o criador: " + (e && e.message ? e.message : e); }
   });
 
