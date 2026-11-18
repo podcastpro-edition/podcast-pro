@@ -3020,8 +3020,10 @@ $("btnTesteModelo").addEventListener("click", async () => {
 
     // linhas: clique numa para abrir as opções dela
     const cl = el("div", "ed-card");
-    cl.appendChild(el("div", "ed-tit", "Linhas do texto"));
+    const titL = el("div", "ed-tit", "Linhas do texto"); cl.appendChild(titL);
     const exp = el("div", "rt", "Clique na linha para marcá-la (as setas da prévia movem as marcadas). A seta ▾ abre as opções. Arraste o ≡ para mudar a profundidade: a de cima fica na frente das outras."); exp.style.fontSize = "12px"; cl.appendChild(exp);
+    const limpar = (ev) => { if ((E.marc || []).length && (ev.target === cl || ev.target === titL || ev.target === exp || ev.target === caixa)) { E.marc = []; desenhar(); } };
+    cl.addEventListener("click", limpar); caixa.addEventListener("click", limpar);
     const itens = [];
     const iniciarArraste = (de) => { // arrastar pela alça ≡: solta onde quiser na lista (cima = na frente)
       let alvo = de;
