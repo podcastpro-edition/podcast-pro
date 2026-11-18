@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.43"
+VERSAO = "1.0.44"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -344,6 +344,228 @@ def quem_fala(pessoas, caminho, janela=0.1, margem_db=6.0, acima_ruido_db=12.0,
     return saida, tempo, ativo.any(axis=0), janela
 
 
+# --------------------------------------- vozes em uma trilha só (sem microfone separado)
+
+def _mfcc(x, taxa=16000, n_mel=26, n_coef=20):
+    """MFCC simples em numpy. Devolve (coeficientes por quadro, energia dB por quadro)."""
+    import numpy as np
+
+    tam, passo = int(0.025 * taxa), int(0.010 * taxa)
+    if len(x) < tam + passo:
+        return np.zeros((0, n_coef)), np.zeros(0)
+    n = 1 + (len(x) - tam) // passo
+    idx = np.arange(tam)[None, :] + passo * np.arange(n)[:, None]
+    q = x[idx] * np.hamming(tam)[None, :]
+    energia = 10 * np.log10((q ** 2).mean(axis=1) + 1e-10)
+    nfft = 512
+    esp = np.abs(np.fft.rfft(q, nfft, axis=1)) ** 2
+    mel = lambda f: 2595 * np.log10(1 + f / 700.0)
+    imel = lambda m: 700 * (10 ** (m / 2595.0) - 1)
+    pontos = imel(np.linspace(mel(80), mel(taxa / 2 * 0.95), n_mel + 2))
+    bins = np.floor((nfft + 1) * pontos / taxa).astype(int)
+    fb = np.zeros((n_mel, nfft // 2 + 1))
+    for m in range(1, n_mel + 1):
+        a, b, c = bins[m - 1], bins[m], bins[m + 1]
+        for k in range(a, b):
+            fb[m - 1, k] = (k - a) / max(1, b - a)
+        for k in range(b, c):
+            fb[m - 1, k] = (c - k) / max(1, c - b)
+    logmel = np.log(esp @ fb.T + 1e-10)
+    k = np.arange(n_mel)
+    dct = np.cos(np.pi / n_mel * (k[None, :] + 0.5) * np.arange(n_coef)[:, None])
+    return logmel @ dct.T, energia
+
+
+def _f0_mediano(x, taxa=16000):
+    """Altura média da voz (Hz) de um pedaço de áudio, por autocorrelação; 0 se não achar."""
+    import numpy as np
+
+    tam, passo = int(0.04 * taxa), int(0.02 * taxa)
+    vals = []
+    lo, hi = int(taxa / 400), int(taxa / 70)
+    for i in range(0, len(x) - tam, passo):
+        q = x[i:i + tam] - x[i:i + tam].mean()
+        if (q ** 2).mean() < 1e-7:
+            continue
+        ac = np.correlate(q, q, "full")[tam - 1:]
+        if ac[0] <= 0:
+            continue
+        k = lo + int(np.argmax(ac[lo:hi]))
+        if ac[k] / ac[0] > 0.4:
+            vals.append(taxa / k)
+    return float(np.median(vals)) if len(vals) >= 3 else 0.0
+
+
+def _kmeans(X, k, tentativas=8, semente=1):
+    import numpy as np
+
+    rng = np.random.default_rng(semente)
+    melhor, melhor_custo = None, 1e30
+    for _ in range(tentativas):
+        c = [X[rng.integers(len(X))]]
+        for _ in range(1, k):
+            d = np.min(((X[:, None, :] - np.array(c)[None]) ** 2).sum(axis=2), axis=1)
+            c.append(X[rng.choice(len(X), p=d / d.sum())] if d.sum() > 0 else X[rng.integers(len(X))])
+        c = np.array(c)
+        for _ in range(40):
+            rot = np.argmin(((X[:, None, :] - c[None]) ** 2).sum(axis=2), axis=1)
+            novo = np.array([X[rot == j].mean(axis=0) if (rot == j).any() else c[j] for j in range(k)])
+            if np.allclose(novo, c):
+                break
+            c = novo
+        rot = np.argmin(((X[:, None, :] - c[None]) ** 2).sum(axis=2), axis=1)
+        custo = sum(((X[rot == j] - c[j]) ** 2).sum() for j in range(k))
+        if custo < melhor_custo:
+            melhor, melhor_custo = rot, custo
+    return melhor
+
+
+def vozes_na_trilha(caminho, n_vozes, duracao_minima=1.5, taxa=16000, janela=1.2, passo=0.6):
+    """Separa as vozes de uma trilha só pelo timbre e pela altura da voz.
+    Devolve {"trechos":[{ini,fim,voz}], "tempo":{voz:segundos}, "janela":0.1}.
+    As vozes são numeradas 0..n-1 na ordem em que aparecem."""
+    import numpy as np
+
+    x = ler_canal(caminho, None, taxa)
+    coef, energia = _mfcc(x, taxa)
+    if len(coef) == 0:
+        raise RuntimeError("áudio curto demais para separar as vozes")
+    limite = np.percentile(energia, 5) + 10
+    voz_ativa = energia > limite
+    qj, qp = int(janela * 100), int(passo * 100)
+    feats, tempos = [], []
+    for i in range(0, len(coef) - qj, qp):
+        m = voz_ativa[i:i + qj]
+        if m.mean() < 0.4:
+            continue
+        c = coef[i:i + qj][m][:, 1:]
+        a, b = int(i * 0.01 * taxa), int((i + qj) * 0.01 * taxa)
+        f0 = _f0_mediano(x[a:b], taxa)
+        feats.append(np.concatenate([c.mean(axis=0), [np.log(f0) * 3.0 if f0 > 0 else np.nan]]))
+        tempos.append(i * 0.01)
+    feats = np.array(feats)
+    if len(feats) < max(6, 2 * n_vozes):
+        raise RuntimeError("pouca fala para separar as vozes")
+    col = feats[:, -1]
+    col[np.isnan(col)] = np.nanmedian(col) if np.isfinite(np.nanmedian(col)) else 0.0
+    feats = (feats - feats.mean(axis=0)) / (feats.std(axis=0) + 1e-6)
+    rot = _kmeans(feats, max(1, int(n_vozes))) if n_vozes > 1 else np.zeros(len(feats), dtype=int)
+    # suaviza (mediana de 5 janelas)
+    sua = rot.copy()
+    for i in range(len(rot)):
+        viz = rot[max(0, i - 2): i + 3]
+        sua[i] = np.bincount(viz).argmax()
+    # renumera pela ordem de aparição
+    ordem = {}
+    for r in sua:
+        ordem.setdefault(int(r), len(ordem))
+    sua = np.array([ordem[int(r)] for r in sua])
+
+    janelas_01 = int(round(len(x) / taxa / 0.1))
+    lab = np.full(janelas_01, -1, dtype=int)
+    for t, r in zip(tempos, sua):
+        a = int(t / 0.1); b = min(janelas_01, int((t + janela) / 0.1))
+        lab[a:b] = int(r)
+    ult = None
+    for i in range(janelas_01):  # silêncio mantém quem falava
+        if lab[i] < 0:
+            if ult is not None:
+                lab[i] = ult
+        else:
+            ult = lab[i]
+    prim = next((v for v in lab if v >= 0), 0)
+    lab[lab < 0] = prim
+    trechos, ini = [], 0
+    for i in range(1, len(lab) + 1):
+        if i == len(lab) or lab[i] != lab[ini]:
+            trechos.append([ini, i, int(lab[ini])]); ini = i
+    minimo = int(round(duracao_minima / 0.1))
+    while len(trechos) > 1:
+        k = min(range(len(trechos)), key=lambda j: trechos[j][1] - trechos[j][0])
+        if trechos[k][1] - trechos[k][0] >= minimo:
+            break
+        if k == 0:
+            v = 1
+        elif k == len(trechos) - 1:
+            v = k - 1
+        else:
+            v = k - 1 if (trechos[k - 1][1] - trechos[k - 1][0]) >= (trechos[k + 1][1] - trechos[k + 1][0]) else k + 1
+        trechos[k][2] = trechos[v][2]
+        fund = [trechos[0]]
+        for t in trechos[1:]:
+            if t[2] == fund[-1][2]:
+                fund[-1][1] = t[1]
+            else:
+                fund.append(t)
+        trechos = fund
+    tempo, saida = {}, []
+    for a, b, v in trechos:
+        tempo[v] = tempo.get(v, 0.0) + (b - a) * 0.1
+        saida.append({"ini": round(a * 0.1, 2), "fim": round(b * 0.1, 2), "voz": int(v)})
+    return {"trechos": saida, "tempo": {str(k): round(v, 1) for k, v in tempo.items()}}
+
+
+def ligar_vozes_as_pessoas(res_vozes, wav, pessoas, cameras):
+    """Tenta descobrir sozinho qual voz é de qual pessoa, comparando quando cada voz fala com o
+    volume do áudio de cada câmera (a câmera de quem fala costuma captar mais essa voz).
+    pessoas: [{nome, camera}]; cameras: {"V2": caminho}. Devolve {"mapa": {voz: nome|None},
+    "confiavel": bool, "amostras": {voz: [segundos...]}}."""
+    import numpy as np
+    from itertools import permutations
+
+    trechos = res_vozes["trechos"]
+    vozes = sorted({t["voz"] for t in trechos})
+    amostras = {}
+    for v in vozes:
+        mais_longos = sorted((t for t in trechos if t["voz"] == v), key=lambda t: t["ini"] - t["fim"])[:3]
+        amostras[v] = sorted(round(t["ini"], 1) for t in mais_longos)
+    resposta = {"mapa": {v: None for v in vozes}, "confiavel": False, "amostras": amostras}
+    cams = sorted({p["camera"] for p in pessoas if p["camera"] in cameras})
+    if len(vozes) < 2 or len(cams) < 2:
+        return resposta
+    n = int(round(max(t["fim"] for t in trechos) / 0.1))
+    base = {}
+    try:
+        lags = deslocamentos(wav, [cameras[c] for c in cams])
+        for c, (lag, _conf) in zip(cams, lags):
+            e = envelope_db(ler_canal(cameras[c], None, 8000), 8000, 0.1)
+            k = int(round(lag / 0.1))
+            e = np.roll(e, -k)
+            e = e[:n] if len(e) >= n else np.pad(e, (0, n - len(e)), constant_values=e.min())
+            base[c] = (e - e.mean()) / (e.std() + 1e-6)
+    except Exception:
+        return resposta
+    lab = np.full(n, -1)
+    for t in trechos:
+        lab[int(t["ini"] / 0.1): int(t["fim"] / 0.1)] = t["voz"]
+    pontos = {}
+    for v in vozes:
+        em = lab == v
+        for c in cams:
+            fora = base[c][~em].mean() if (~em).any() else 0.0
+            pontos[(v, c)] = float(base[c][em].mean() - fora) if em.any() else 0.0
+    # escolhe a melhor combinação voz -> pessoa (cada pessoa recebe no máximo uma voz)
+    quantas = min(len(vozes), len(pessoas))
+    melhores = []
+    for perm in permutations(range(len(pessoas)), quantas):
+        tot = sum(pontos.get((v, pessoas[i]["camera"]), 0.0) for v, i in zip(vozes, perm))
+        melhores.append((tot, perm))
+    melhores.sort(key=lambda z: -z[0])
+    if not melhores:
+        return resposta
+    tot1, perm1 = melhores[0]
+    tot2 = melhores[1][0] if len(melhores) > 1 else tot1 - 1
+    cams_pessoas = [pessoas[i]["camera"] for i in perm1]
+    unicas = len(set(cams_pessoas)) == len(cams_pessoas)
+    fortes = all(pontos.get((v, pessoas[i]["camera"]), 0.0) > 0.15 for v, i in zip(vozes, perm1))
+    margem = (tot1 - tot2) / (abs(tot1) + 1e-6)
+    for v, i in zip(vozes, perm1):
+        resposta["mapa"][v] = pessoas[i]["nome"]
+    resposta["confiavel"] = bool(unicas and fortes and margem > 0.25 and quantas == len(pessoas))
+    resposta["margem"] = round(float(margem), 2)
+    return resposta
+
+
 def deslocamentos(ref, outros, duracao=600, maximo=30.0):
     """Quanto cada arquivo em 'outros' está atrasado (+) ou adiantado (-) em
     relação a 'ref', comparando o áudio (envelope). Devolve [(deslocamento, confiança)]."""
@@ -431,7 +653,8 @@ def priorizar_apresentador(trechos, pessoas, apresentadores, nivel):
 
 
 def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
-                  cortar_silencios=False, faixas=None, apresentador=None, prioridade=0):
+                  cortar_silencios=False, faixas=None, apresentador=None, prioridade=0,
+                  trechos_prontos=None):
     """Junta tudo: sincronia das câmeras, quem fala, silêncios a cortar.
     cameras: {"V1": caminho, ...}. Devolve o plano de montagem."""
     total = duracao_total(wav)
@@ -441,7 +664,16 @@ def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
         fino, medidas = sincronia_fina(wav, caminho, g)
         atraso[nome] = {"valor": fino, "medidas": medidas, "confianca": conf}
 
-    trechos, tempo, alguem, janela = quem_fala(pessoas, wav, duracao_minima=duracao_minima)
+    if trechos_prontos:  # trilha única: quem fala já foi descoberto pela voz
+        import numpy as np
+        janela = 0.1
+        trechos = [dict(t) for t in trechos_prontos]
+        tempo = {}
+        for t in trechos:
+            tempo[t["quem"]] = tempo.get(t["quem"], 0.0) + (t["fim"] - t["ini"])
+        alguem = np.ones(int(total / janela) + 1, dtype=bool)
+    else:
+        trechos, tempo, alguem, janela = quem_fala(pessoas, wav, duracao_minima=duracao_minima)
     trechos = priorizar_apresentador(trechos, pessoas, apresentador, int(prioridade or 0))
 
     # silêncios = janelas em que ninguém fala, com pelo menos 'minimo' segundos
@@ -1618,6 +1850,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._responder({"srt": destino, "segments": len(falas),
                                         "descartadas": len(descartadas)})
 
+            if self.path == "/vozes":
+                cams = corpo.get("cameras") or {}
+                for o in cams.values():
+                    if not os.path.isfile(o):
+                        return self._responder({"erro": f"arquivo não encontrado: {o}"}, 400)
+                pessoas = corpo.get("pessoas") or []
+                res = vozes_na_trilha(caminho, max(1, int(corpo.get("n") or len(pessoas) or 2)))
+                lig = ligar_vozes_as_pessoas(res, caminho, pessoas, cams)
+                return self._responder({"trechos": res["trechos"], "tempo": res["tempo"],
+                                        "mapa": {str(k): v for k, v in lig["mapa"].items()},
+                                        "confiavel": lig["confiavel"],
+                                        "amostras": {str(k): v for k, v in lig["amostras"].items()},
+                                        "margem": lig.get("margem")})
+
             if self.path == "/speakers":
                 trechos, tempo, _, _ = quem_fala(
                     corpo["pessoas"], caminho,
@@ -1667,7 +1913,8 @@ class Handler(BaseHTTPRequestHandler):
                     float(corpo.get("minimo", 0.5)), float(corpo.get("respiro", 0.25)),
                     float(corpo.get("duracaoMinima", 2.0)),
                     bool(corpo.get("cortarSilencios", False)), corpo.get("faixas"),
-                    corpo.get("apresentadores") or corpo.get("apresentador"), int(corpo.get("prioridade", 0))))
+                    corpo.get("apresentadores") or corpo.get("apresentador"), int(corpo.get("prioridade", 0)),
+                    corpo.get("trechosProntos")))
 
             if self.path == "/buscar":
                 return self._responder(buscar_trechos(

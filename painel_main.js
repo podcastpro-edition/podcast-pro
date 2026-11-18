@@ -599,8 +599,9 @@ function criarLinha(grupo, nome, cam, aud) {
   const sc = document.createElement("select");
   for (const v of ["V1", "V2", "V3", "V4"]) { const o = document.createElement("option"); o.value = v; o.textContent = v; sc.appendChild(o); }
   const sa = document.createElement("select");
+  { const o = document.createElement("option"); o.value = "-1"; o.textContent = "Voz única"; sa.appendChild(o); }
   for (let i = 0; i < 12; i++) { const o = document.createElement("option"); o.value = String(i); o.textContent = rotuloAudio(i); sa.appendChild(o); }
-  const usadas = LINHAS.ap.concat(LINHAS.pt).map((l) => parseInt(l.aud.value, 10));
+  const usadas = LINHAS.ap.concat(LINHAS.pt).map((l) => parseInt(l.aud.value, 10)).filter((n) => n >= 0);
   sc.value = cam || (grupo === "ap" ? "V2" : "V3");
   sa.value = String(aud !== undefined ? aud : Math.min(11, usadas.length ? Math.max(...usadas) + 1 : 3));
   const obj = { grupo, linha, nome: campo, cam: sc, aud: sa };
@@ -629,7 +630,9 @@ function lerPessoas() {
       let base = nome, k = 2;
       while (vistos.has(nome)) nome = base + " " + k++;
       vistos.add(nome);
-      pessoas.push({ nome, trilhaAudio: parseInt(l.aud.value, 10) || 0, camera: l.cam.value });
+      const aud = parseInt(l.aud.value, 10);
+      const vozUnica = aud < 0; // "Voz única": todos gravados juntos numa trilha só
+      pessoas.push({ nome, trilhaAudio: vozUnica ? 0 : (aud || 0), camera: l.cam.value, vozUnica });
       if (g === "ap") apresentadores.push(nome);
     }
   }
@@ -643,6 +646,7 @@ const PODCAST = {
     const base = PODCAST_BASE_WAV !== null ? PODCAST_BASE_WAV : Math.min(...pessoas.map((p) => p.trilhaAudio));
     return pessoas.map((p) => ({ ...p, canal: Math.max(0, p.trilhaAudio - base) }));
   },
+  get vozUnica() { return lerPessoas().pessoas.some((p) => p.vozUnica); },
   get geral() { return $("pGeral") ? $("pGeral").value : "V1"; },
   get apresentadores() { return lerPessoas().apresentadores; },
   get prioridade() { return $("pPrior") ? parseInt($("pPrior").value, 10) || 0 : 0; },
@@ -738,6 +742,46 @@ $("btnPodcast").addEventListener("click", () => semPressa(async () => {
   }
 }));
 
+// Trilha única: separa as vozes sozinho; se não tiver certeza de quem é quem, pergunta.
+async function resolverVozes(ppro, sequencia, wav, cameras) {
+  const pess = PODCAST.pessoas.map((p) => ({ nome: p.nome, camera: p.camera }));
+  mostrar("Separando as vozes da trilha única...\n(pode levar um minuto; não mexa no Premiere)");
+  const r = await chamar("/vozes", { path: wav, cameras, pessoas: pess, n: pess.length });
+  const mapa = Object.assign({}, r.mapa);
+  if (!r.confiavel) {
+    const livres = pess.map((p) => p.nome);
+    const voces = Object.keys(r.mapa).sort((a, b) => Number(a) - Number(b));
+    for (let k = 0; k < voces.length; k++) {
+      const v = voces[k];
+      const palpite = r.mapa[v];
+      if (livres.length === 1) { mapa[v] = livres[0]; break; }
+      const amostras = (r.amostras[v] || [0]);
+      let ia = 0;
+      const escolhido = await new Promise((resolve) => {
+        const botoes = [{
+          rotulo: "Ir ao trecho desta voz (" + amostras.length + " exemplos; clique de novo para o próximo)", fica: true,
+          acao: async () => {
+            try {
+              const tt = await ppro.TickTime.createWithSeconds(amostras[ia % amostras.length]);
+              ia++;
+              await sequencia.setPlayerPosition(tt);
+            } catch (e) { /* segue */ }
+          },
+        }];
+        for (const nome of livres) botoes.push({ rotulo: (nome === palpite ? "★ " : "") + nome, cor: "azul", acao: () => resolve(nome) });
+        popup("Quem é a Voz " + (k + 1) + "? (" + (k + 1) + " de " + voces.length + ")",
+          "Não tive certeza de quem é cada voz. Clique no primeiro botão para ir até um trecho em que ela fala, escute no Premiere (barra de espaço) e escolha o nome abaixo." + (palpite ? " A estrela marca o meu palpite." : ""),
+          botoes);
+      });
+      mapa[v] = escolhido;
+      livres.splice(livres.indexOf(escolhido), 1);
+    }
+  }
+  const cam = {};
+  for (const p of pess) cam[p.nome] = p.camera;
+  return r.trechos.map((t) => ({ ini: t.ini, fim: t.fim, quem: mapa[String(t.voz)], camera: cam[mapa[String(t.voz)]] || null }));
+}
+
 // --- Podcast: monta a sequência (câmeras sincronizadas + cortes) -------------
 // limite = até quantos segundos da sequência nova montar (Infinity = tudo).
 async function montarPodcast(limite, opcoes = {}) {
@@ -753,6 +797,12 @@ async function montarPodcast(limite, opcoes = {}) {
     const cameras = {};
     for (const v of camerasUsadas()) cameras[v] = await caminhoDaTrilha(ppro, origem, "V", parseInt(v.slice(1), 10) - 1);
 
+    let trechosProntos = null;
+    if (PODCAST.vozUnica) {
+      etapa = "separar as vozes";
+      trechosProntos = await resolverVozes(ppro, origem, wav, cameras);
+    }
+
     etapa = "calcular o plano de cortes";
     mostrar("Calculando sincronia e cortes...\n(uns 40 segundos; não mexa no Premiere)");
     const plano = await chamar("/plano_podcast", {
@@ -762,6 +812,7 @@ async function montarPodcast(limite, opcoes = {}) {
       minimo: lerNumero("minimo"), respiro: lerNumero("respiro"),
       cortarSilencios: PODCAST.cortarSilencios,
       faixas: opcoes.faixas || null,
+      trechosProntos,
     });
     const pecas = plano.pecas.filter((p) => p.t < limite);
     const keeps = plano.keeps.filter((k) => k.t < limite);
@@ -919,7 +970,7 @@ function popup(titulo, texto, botoes) {
     const d = document.createElement("div");
     d.className = "pb " + (b.cor || "");
     d.textContent = b.rotulo;
-    d.addEventListener("click", () => { $("popup").style.display = "none"; if (b.acao) b.acao(); });
+    d.addEventListener("click", () => { if (!b.fica) $("popup").style.display = "none"; if (b.acao) b.acao(); });
     area.appendChild(d);
   }
   $("popup").style.display = "block";
