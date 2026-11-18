@@ -2679,3 +2679,14 @@ $("btnTesteModelo").addEventListener("click", async () => {
     } catch (e) { if (m) m.textContent = "Erro: " + (e && e.message ? e.message : e); mostrar("Erro ao organizar as legendas: " + (e && e.message ? e.message : e), true); }
   }));
 })();
+
+// Menu "Avançado" da aba Legendas (abre e fecha)
+(function () {
+  const m = $("menuLegAv");
+  if (!m) return;
+  m.addEventListener("click", () => {
+    const aberto = $("corpoLegAv").style.display !== "none";
+    $("corpoLegAv").style.display = aberto ? "none" : "block";
+    $("setaLegAv").textContent = aberto ? "▸" : "▾";
+  });
+})();
