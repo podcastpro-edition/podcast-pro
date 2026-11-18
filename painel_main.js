@@ -2239,9 +2239,9 @@ $("btnAtualizar").addEventListener("click", async () => {
   function cartao(o) {
     const card = document.createElement("div");
     card.className = "modelo" + (o.value === sel.value ? " sel" : "");
-    if (COM_IMAGEM.has(o.value)) {
+    if (COM_IMAGEM.has(o.value) || (window.ppEstilosImg && window.ppEstilosImg.has(o.value))) {
       const im = document.createElement("img");
-      im.src = SERVICO + "/painel/img/" + o.value.replace(" ", "_") + ".png";
+      im.src = SERVICO + "/painel/img/" + o.value.replace(/ /g, "_") + ".png" + (window.ppVerImg ? "?v=" + window.ppVerImg : "");
       im.onerror = () => { const d = document.createElement("div"); d.className = "sem"; d.textContent = o.value; if (im.parentNode) im.parentNode.replaceChild(d, im); };
       card.appendChild(im);
     } else {
@@ -2262,7 +2262,7 @@ $("btnAtualizar").addEventListener("click", async () => {
   }
   function desenhar() {
     const ops = Array.from(sel.options);
-    const ass = ops.map((o) => o.value + "|" + o.textContent).join(";") + "#" + sel.value + "#" + Array.from(favoritos).join(",") + "#" + aberto;
+    const ass = ops.map((o) => o.value + "|" + o.textContent).join(";") + "#" + sel.value + "#" + Array.from(favoritos).join(",") + "#" + aberto + "#" + (window.ppVerImg || 0);
     if (ass === assinatura) return;
     assinatura = ass;
     gal.innerHTML = "";
@@ -2420,7 +2420,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       const itens = await (await seq.getVideoTrack(i)).getTrackItems(1, false);
       for (const c of itens) {
         const nome = (await (await c.getProjectItem()).name) || "";
-        if (/^leg\d+_Criativo/.test(nome)) {
+        if (/^leg\d+_/.test(nome)) {
           achados.push({ nome, ini: (await c.getStartTime()).seconds, fim: (await c.getEndTime()).seconds, trilha: i, item: c });
         }
       }
@@ -2572,7 +2572,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       if (!itens || !itens.length) { ultima = ""; return; }
       const it = itens[0];
       const nome = (await (await it.getProjectItem()).name) || "";
-      if (!/^leg\d+_Criativo/.test(nome)) return;
+      if (!/^leg\d+_/.test(nome)) return;
       const ini = (await it.getStartTime()).seconds;
       const chave = nome + "@" + ini.toFixed(2);
       if (chave === ultima) return;
@@ -2689,4 +2689,246 @@ $("btnTesteModelo").addEventListener("click", async () => {
     $("corpoLegAv").style.display = aberto ? "none" : "block";
     $("setaLegAv").textContent = aberto ? "▸" : "▾";
   });
+})();
+
+// ===================== Criador de estilos de legenda =====================
+(function () {
+  const botao = $("btnCriarEstilo"), caixa = $("criador"), sel = $("estEstilo");
+  if (!botao || !caixa) return;
+  window.ppEstilosImg = window.ppEstilosImg || new Set();
+  const CORES = ["#FFFFFF", "#FFD700", "#FF28C8", "#B09CFF", "#00E5FF", "#7CFF6B", "#FF5A36", "#000000"];
+  const ANIMS = [["pop", "Pulo (aparece crescendo)"], ["fade", "Surgir suave"], ["subir", "Subir"], ["descer", "Descer"],
+                 ["zoom", "Zoom (de perto para o normal)"], ["quicar", "Quicar"], ["digitar", "Digitar (letra por letra)"], ["nenhuma", "Sem animação"]];
+  let fontes = [], estilos = [], E = null, timerPrevia = null, aberto = false;
+
+  const hex2rgb = (h) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(h).trim()); if (!m) return null; const n = parseInt(m[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  const rgb2hex = (c) => "#" + (c || [255, 255, 255]).map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("").toUpperCase();
+  const linhaPadrao = (i) => ({ f: "Poppins-Bold", tam: 8, y: Math.min(90, 40 + i * 14), x: 50, cor: "#FFFFFF", caixa: false, rot: 0,
+    contorno: { on: false, cor: "#000000", larg: 6 }, sombra: { on: true, forca: 65 },
+    tarja: { on: false, cor: "#000000", opac: 75, raio: 25 }, brilho: { on: false, cor: "#FFD700", forca: 80 } });
+
+  function doDef(def) { // definição do servidor -> estado do editor
+    return {
+      linhas: def.linhas.map((l) => ({
+        f: l.f, tam: Math.round(l.tam * 1000) / 10, y: Math.round(l.y * 100), x: Math.round((l.x === undefined ? 0.5 : l.x) * 100),
+        cor: rgb2hex(l.cor), caixa: !!l.caixa, rot: l.rot || 0,
+        contorno: l.contorno && l.contorno.ligada !== false ? { on: true, cor: rgb2hex(l.contorno.cor || [0, 0, 0]), larg: Math.round((l.contorno.larg || 0.06) * 100) } : { on: false, cor: "#000000", larg: 6 },
+        sombra: l.sombra && l.sombra.ligada === false ? { on: false, forca: 65 } : { on: true, forca: Math.round(((l.sombra && l.sombra.opac) || 0.65) * 100) },
+        tarja: l.tarja && l.tarja.ligada !== false ? { on: true, cor: rgb2hex(l.tarja.cor || [0, 0, 0]), opac: Math.round((l.tarja.opac === undefined ? 0.75 : l.tarja.opac) * 100), raio: Math.round((l.tarja.raio || 0.25) * 100) } : { on: false, cor: "#000000", opac: 75, raio: 25 },
+        brilho: l.brilho && l.brilho.ligada !== false ? { on: true, cor: rgb2hex(l.brilho.cor || l.cor), forca: Math.round((l.brilho.forca === undefined ? 0.8 : l.brilho.forca) * 100) } : { on: false, cor: "#FFD700", forca: 80 },
+      })),
+      anim: Object.assign({ entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" }, def.anim || {}),
+    };
+  }
+  function paraDef() { // estado -> definição para o servidor
+    return {
+      linhas: E.linhas.map((l) => {
+        const o = { f: l.f, tam: l.tam / 100, y: l.y / 100, x: l.x / 100, cor: hex2rgb(l.cor) || [255, 255, 255], caixa: l.caixa, rot: l.rot };
+        if (l.contorno.on) o.contorno = { cor: hex2rgb(l.contorno.cor) || [0, 0, 0], larg: l.contorno.larg / 100 };
+        o.sombra = l.sombra.on ? { opac: l.sombra.forca / 100 } : { ligada: false };
+        if (l.tarja.on) o.tarja = { cor: hex2rgb(l.tarja.cor) || [0, 0, 0], opac: l.tarja.opac / 100, raio: l.tarja.raio / 100, pad: 0.25 };
+        if (l.brilho.on) o.brilho = { cor: hex2rgb(l.brilho.cor) || [255, 215, 0], forca: l.brilho.forca / 100, raio: 0.25 };
+        return o;
+      }),
+      anim: E.anim,
+    };
+  }
+  function agendarPrevia() {
+    if (timerPrevia) clearTimeout(timerPrevia);
+    timerPrevia = setTimeout(async () => {
+      try {
+        await chamar("/estilo/previa", { def: paraDef() });
+        const im = $("edPrevia");
+        if (im) im.src = SERVICO + "/painel/img/prev_editor.png?t=" + Date.now();
+      } catch (e) { const m = $("edMsg"); if (m) m.textContent = "Prévia: " + (e && e.message ? e.message : e); }
+    }, 400);
+  }
+
+  // ---- componentes ----
+  function el(tag, cls, txt) { const e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; }
+  function stepper(obj, chave, min, max, passo, sufixo, casas) {
+    const w = el("div", "stp");
+    const v = el("div", "v");
+    const fmt = () => { v.textContent = Number(obj[chave]).toFixed(casas || 0).replace(".", ",") + (sufixo || ""); };
+    const mais = (d) => () => { obj[chave] = Math.max(min, Math.min(max, Math.round((obj[chave] + d) * 1000) / 1000)); fmt(); agendarPrevia(); };
+    const b1 = el("div", "b", "−"), b2 = el("div", "b", "+");
+    b1.addEventListener("click", mais(-passo)); b2.addEventListener("click", mais(passo));
+    fmt(); w.appendChild(b1); w.appendChild(v); w.appendChild(b2);
+    return w;
+  }
+  function linha(rotulo, controle) { const r = el("div", "ed-lin"); r.appendChild(el("div", "rt", rotulo)); r.appendChild(controle); return r; }
+  function simNao(obj, chave, aoMudar) {
+    const s = document.createElement("select");
+    s.style.width = "110px";
+    for (const [v, n] of [["0", "Não"], ["1", "Sim"]]) { const o = document.createElement("option"); o.value = v; o.textContent = n; s.appendChild(o); }
+    s.value = obj[chave] ? "1" : "0";
+    s.addEventListener("change", () => { obj[chave] = s.value === "1"; if (aoMudar) aoMudar(); agendarPrevia(); });
+    return s;
+  }
+  function campoCor(obj, chave) {
+    const w = el("div");
+    const i = document.createElement("input"); i.type = "text"; i.value = obj[chave]; i.style.width = "100px";
+    i.addEventListener("change", () => { if (hex2rgb(i.value)) { obj[chave] = "#" + i.value.replace("#", "").toUpperCase(); i.value = obj[chave]; agendarPrevia(); } else i.value = obj[chave]; });
+    const sw = el("div", "sws");
+    for (const c of CORES) {
+      const q = el("div", "sw"); q.style.backgroundColor = c;
+      q.addEventListener("click", () => { obj[chave] = c; i.value = c; agendarPrevia(); });
+      sw.appendChild(q);
+    }
+    w.appendChild(i); w.appendChild(sw);
+    return w;
+  }
+  function selecionar(opcoes, valor, aoMudar, largura) {
+    const s = document.createElement("select");
+    if (largura) s.style.width = largura;
+    for (const [v, n] of opcoes) { const o = document.createElement("option"); o.value = v; o.textContent = n; s.appendChild(o); }
+    s.value = valor;
+    s.addEventListener("change", () => aoMudar(s.value));
+    return s;
+  }
+
+  function desenharLinha(l, i) {
+    const c = el("div", "ed-card");
+    const cab = el("div", "ed-lin");
+    cab.appendChild(el("div", "ed-tit", "Linha " + (i + 1)));
+    cab.firstChild.style.flex = "1";
+    if (E.linhas.length > 1) {
+      const x = el("div", "ed-btn verm", "Remover"); x.style.margin = "0"; x.style.padding = "4px 10px";
+      x.addEventListener("click", () => { E.linhas.splice(i, 1); desenhar(); agendarPrevia(); });
+      cab.appendChild(x);
+    }
+    c.appendChild(cab);
+    const opFontes = fontes.length ? fontes.map((f) => [f.id, f.nome]) : [[l.f, l.f]];
+    if (!opFontes.some((o) => o[0] === l.f)) opFontes.unshift([l.f, l.f]);
+    c.appendChild(el("div", "rt", "Fonte")); c.lastChild.style.fontSize = "12px";
+    c.appendChild(selecionar(opFontes, l.f, (v) => { l.f = v; agendarPrevia(); }));
+    c.appendChild(linha("Tamanho", stepper(l, "tam", 2, 30, 0.5, "%", 1)));
+    c.appendChild(linha("Altura na tela", stepper(l, "y", 5, 95, 1, "%")));
+    c.appendChild(linha("Posição lateral", stepper(l, "x", 10, 90, 1, "%")));
+    c.appendChild(linha("Inclinação", stepper(l, "rot", -30, 30, 1, "°")));
+    c.appendChild(linha("Tudo em MAIÚSCULAS", simNao(l, "caixa")));
+    c.appendChild(el("div", "rt", "Cor do texto")); c.lastChild.style.fontSize = "12px";
+    c.appendChild(campoCor(l, "cor"));
+    // efeitos
+    const efeito = (chave, rotulo, extra) => {
+      const blk = el("div");
+      blk.appendChild(linha(rotulo, simNao(l[chave], "on", () => { desenhar(); })));
+      if (l[chave].on) extra(blk, l[chave]);
+      c.appendChild(blk);
+    };
+    efeito("contorno", "Contorno nas letras", (b, o) => { b.appendChild(campoCor(o, "cor")); b.appendChild(linha("Espessura", stepper(o, "larg", 1, 20, 1, "%"))); });
+    efeito("sombra", "Sombra", (b, o) => { b.appendChild(linha("Intensidade", stepper(o, "forca", 10, 100, 5, "%"))); });
+    efeito("tarja", "Tarja atrás do texto", (b, o) => { b.appendChild(campoCor(o, "cor")); b.appendChild(linha("Opacidade", stepper(o, "opac", 10, 100, 5, "%"))); b.appendChild(linha("Cantos arredondados", stepper(o, "raio", 0, 60, 5, "%"))); });
+    efeito("brilho", "Brilho (glow)", (b, o) => { b.appendChild(campoCor(o, "cor")); b.appendChild(linha("Intensidade", stepper(o, "forca", 10, 100, 5, "%"))); });
+    return c;
+  }
+
+  function desenhar() {
+    caixa.innerHTML = "";
+    const topo = el("div", "ed-card");
+    topo.appendChild(el("div", "ed-tit", "Começar de um estilo existente"));
+    const bases = [["", "Em branco"]].concat(estilos.map((e) => [e.nome, e.nome + (e.usuario ? " (meu)" : "")]));
+    topo.appendChild(selecionar(bases, E.base || "", (v) => {
+      if (!v) { E = { nome: E.nome, base: "", editando: null, linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } }; }
+      else { const e = estilos.find((x) => x.nome === v); const d = doDef(e.def); E = { nome: e.usuario ? e.nome : "", base: v, editando: e.usuario ? e.nome : null, linhas: d.linhas, anim: d.anim }; }
+      desenhar(); agendarPrevia();
+    }));
+    topo.appendChild(el("div", "rt", "Nome do estilo")); topo.lastChild.style.fontSize = "12px"; topo.lastChild.style.marginTop = "8px";
+    const nome = document.createElement("input"); nome.type = "text"; nome.value = E.nome; nome.placeholder = "Ex.: Meu estilo 1";
+    nome.addEventListener("input", () => { E.nome = nome.value; });
+    topo.appendChild(nome);
+    caixa.appendChild(topo);
+    const prev = el("div", "ed-card");
+    prev.appendChild(el("div", "ed-tit", "Prévia (como a legenda fica parada)"));
+    const im = document.createElement("img"); im.id = "edPrevia"; im.className = "ed-prev";
+    prev.appendChild(im);
+    caixa.appendChild(prev);
+    E.linhas.forEach((l, i) => caixa.appendChild(desenharLinha(l, i)));
+    if (E.linhas.length < 5) {
+      const mais = el("div", "ed-btn", "+ Adicionar linha");
+      mais.addEventListener("click", () => { E.linhas.push(linhaPadrao(E.linhas.length)); desenhar(); agendarPrevia(); });
+      caixa.appendChild(mais);
+    }
+    const an = el("div", "ed-card");
+    an.appendChild(el("div", "ed-tit", "Animação"));
+    an.appendChild(selecionar(ANIMS, E.anim.entrada, (v) => { E.anim.entrada = v; agendarPrevia(); }));
+    an.appendChild(linha("Velocidade da entrada (s)", stepper(E.anim, "duracao", 0.1, 1.2, 0.05, " s", 2)));
+    an.appendChild(linha("Atraso entre linhas (s)", stepper(E.anim, "atraso", 0, 0.4, 0.02, " s", 2)));
+    an.appendChild(linha("Saída suave (some devagar)", (() => { const o = { v: E.anim.saida !== "nenhuma" }; return simNaoSaida(o); })()));
+    caixa.appendChild(an);
+    const salvar = el("div", "ed-btn verde", "💾 Salvar estilo");
+    salvar.addEventListener("click", salvarEstilo);
+    caixa.appendChild(salvar);
+    if (E.editando) {
+      const ex = el("div", "ed-btn verm", "🗑 Excluir este estilo");
+      ex.addEventListener("click", excluirEstilo);
+      caixa.appendChild(ex);
+    }
+    const msg = el("div", "dica"); msg.id = "edMsg"; caixa.appendChild(msg);
+  }
+  function simNaoSaida(o) {
+    const s = document.createElement("select"); s.style.width = "110px";
+    for (const [v, n] of [["1", "Sim"], ["0", "Não"]]) { const op = document.createElement("option"); op.value = v; op.textContent = n; s.appendChild(op); }
+    s.value = o.v ? "1" : "0";
+    s.addEventListener("change", () => { E.anim.saida = s.value === "1" ? "fade" : "nenhuma"; agendarPrevia(); });
+    return s;
+  }
+  const mensagem = (t, erro) => { const m = $("edMsg"); if (m) { m.textContent = t; m.style.color = erro ? "#ff8a80" : "#9a9a9a"; } };
+
+  async function salvarEstilo() {
+    try {
+      const nome = (E.nome || "").trim();
+      if (!nome) return mensagem("Dê um nome ao estilo.", true);
+      mensagem("Salvando...");
+      const r = await chamar("/estilo/salvar", { nome, def: paraDef() });
+      await recarregarEstilos();
+      window.ppVerImg = Date.now();
+      if (sel) sel.value = r.nome;
+      try { const f = JSON.parse(localStorage.getItem("ppFavEstilos") || "null"); if (f && !f.includes(r.nome)) { f.push(r.nome); localStorage.setItem("ppFavEstilos", JSON.stringify(f)); } } catch (e) { /* sem armazenamento */ }
+      E.editando = r.nome; E.nome = r.nome;
+      desenhar(); agendarPrevia();
+      mensagem("Estilo \"" + r.nome + "\" salvo e escolhido. Ele já aparece na galeria.");
+    } catch (e) { mensagem("Não salvei: " + (e && e.message ? e.message : e), true); }
+  }
+  async function excluirEstilo() {
+    try {
+      const nome = E.editando;
+      await chamar("/estilo/excluir", { nome });
+      await recarregarEstilos();
+      if (sel && sel.value === nome) sel.value = "aleatorio";
+      E = { nome: "", base: "", editando: null, linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } };
+      desenhar(); agendarPrevia();
+      mensagem("Estilo \"" + nome + "\" excluído.");
+    } catch (e) { mensagem("Não excluí: " + (e && e.message ? e.message : e), true); }
+  }
+
+  // mantém a lista de estilos do programa local e as opções da galeria sincronizadas
+  async function recarregarEstilos() {
+    const r = await (await fetch(SERVICO + "/estilos")).json();
+    estilos = r.estilos || [];
+    const meus = new Set(estilos.filter((e) => e.usuario).map((e) => e.nome));
+    if (sel) {
+      for (const o of Array.from(sel.options)) if (window.ppEstilosImg.has(o.value) && !meus.has(o.value)) sel.removeChild(o);
+      for (const n of meus) {
+        if (!Array.from(sel.options).some((o) => o.value === n)) { const o = document.createElement("option"); o.value = n; o.textContent = n; sel.appendChild(o); }
+      }
+    }
+    window.ppEstilosImg = meus;
+  }
+
+  botao.addEventListener("click", async () => {
+    aberto = !aberto;
+    caixa.style.display = aberto ? "block" : "none";
+    botao.textContent = aberto ? "🎨 Fechar o criador de estilos" : "🎨 Criar / editar estilo";
+    if (!aberto) return;
+    try {
+      if (!estilos.length) await recarregarEstilos();
+      if (!fontes.length) { try { fontes = (await (await fetch(SERVICO + "/estilos/fontes")).json()).fontes || []; } catch (e) { fontes = []; } }
+      if (!E) E = { nome: "", base: "", editando: null, linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } };
+      desenhar(); agendarPrevia();
+    } catch (e) { caixa.textContent = "Não consegui abrir o criador: " + (e && e.message ? e.message : e); }
+  });
+
+  // estilos já criados aparecem na galeria ao abrir o painel
+  (async function () { try { await recarregarEstilos(); } catch (e) { /* programa local ainda iniciando */ } })();
 })();

@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.55"
+VERSAO = "1.0.56"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1631,10 +1631,100 @@ def _achar_fonte(nome, tamanho):
         return ImageFont.load_default()
 
 
+# ---------------------------------------------------------------- estilos (embutidos e do usuário)
+
+ANIM_PADRAO = {"entrada": "pop", "duracao": 0.28, "atraso": 0.07, "saida": "fade"}
+ENTRADAS = ("pop", "fade", "subir", "descer", "zoom", "quicar", "digitar", "nenhuma")
+
+
+def _pasta_estilos():
+    return os.path.join(_RAIZ, "estilos")
+
+
+def _nome_seguro(nome):
+    import unicodedata
+    n = unicodedata.normalize("NFKD", str(nome)).encode("ascii", "ignore").decode("ascii")
+    n = re.sub(r"[^A-Za-z0-9 _-]", "", n).strip()
+    return re.sub(r"\s+", " ", n)[:40]
+
+
+def _limpar_def(d):
+    """Garante uma definição de estilo válida (limites e valores padrão)."""
+    def num(v, lo, hi, pad):
+        try:
+            return max(lo, min(hi, float(v)))
+        except Exception:
+            return pad
+
+    def cor(v, pad=(255, 255, 255)):
+        try:
+            return tuple(int(max(0, min(255, c))) for c in v[:3])
+        except Exception:
+            return pad
+
+    linhas = []
+    for l in (d.get("linhas") or [])[:6]:
+        n = {"f": str(l.get("f", "Poppins-Bold")), "tam": num(l.get("tam"), 0.015, 0.30, 0.08),
+             "y": num(l.get("y"), 0.02, 0.98, 0.5), "x": num(l.get("x"), 0.05, 0.95, 0.5),
+             "cor": cor(l.get("cor")), "caixa": bool(l.get("caixa")), "rot": num(l.get("rot"), -45, 45, 0)}
+        for k in ("contorno", "sombra", "tarja", "brilho"):
+            if isinstance(l.get(k), dict):
+                n[k] = l[k]
+        if "sombra" in l and l["sombra"] is False:
+            n["sombra"] = {"ligada": False}
+        linhas.append(n)
+    if not linhas:
+        raise RuntimeError("O estilo precisa de pelo menos uma linha.")
+    an = dict(ANIM_PADRAO)
+    an.update({k: v for k, v in (d.get("anim") or {}).items() if k in ANIM_PADRAO})
+    if an["entrada"] not in ENTRADAS:
+        an["entrada"] = "pop"
+    an["duracao"] = num(an["duracao"], 0.05, 1.5, 0.28)
+    an["atraso"] = num(an["atraso"], 0.0, 0.5, 0.07)
+    an["saida"] = "nenhuma" if an["saida"] == "nenhuma" else "fade"
+    return {"linhas": linhas, "anim": an}
+
+
+def estilos_usuario():
+    saida = {}
+    pasta = _pasta_estilos()
+    if os.path.isdir(pasta):
+        for nome in sorted(os.listdir(pasta)):
+            if nome.lower().endswith(".json"):
+                try:
+                    with open(os.path.join(pasta, nome), encoding="utf-8") as f:
+                        dados = json.load(f)
+                    saida[dados["nome"]] = _limpar_def(dados["def"])
+                except Exception:
+                    pass
+    return saida
+
+
+def eh_estilo_overlay(nome):
+    return nome in ESTILOS_OVERLAY or nome in estilos_usuario()
+
+
+def _def_estilo(nome):
+    if isinstance(nome, dict):
+        return _limpar_def(nome)
+    usuario = estilos_usuario()
+    if nome in usuario:
+        return usuario[nome]
+    if nome in ESTILOS_OVERLAY:
+        return _limpar_def({"linhas": ESTILOS_OVERLAY[nome]})
+    raise RuntimeError("Estilo desconhecido: " + str(nome))
+
+
+def _tempo_entrada(anim, n_linhas):
+    if anim["entrada"] == "nenhuma":
+        return 0.05
+    return anim["duracao"] + anim["atraso"] * max(0, n_linhas - 1) + 0.05
+
+
 def _sprites_legenda(estilo, texto, W, H):
     """Desenha cada linha da legenda numa imagem pequena transparente. Devolve [(imagem, cx, cy)]."""
     from PIL import Image, ImageDraw, ImageFilter
-    camadas = ESTILOS_OVERLAY[estilo]
+    camadas = _def_estilo(estilo)["linhas"]
     linhas = dividir_em_linhas(texto, len(camadas))
     linhas += [""] * (len(camadas) - len(linhas))
     saida = []
@@ -1644,58 +1734,184 @@ def _sprites_legenda(estilo, texto, W, H):
         if cam.get("caixa"):
             txt = txt.upper()
         tam = max(10, int(H * cam["tam"]))
+        cont = cam.get("contorno") if isinstance(cam.get("contorno"), dict) and cam["contorno"].get("ligada", True) else None
+        brilho = cam.get("brilho") if isinstance(cam.get("brilho"), dict) and cam["brilho"].get("ligada", True) else None
+        tarja = cam.get("tarja") if isinstance(cam.get("tarja"), dict) and cam["tarja"].get("ligada", True) else None
+        sh = cam.get("sombra", {}) if isinstance(cam.get("sombra", {}), dict) else {}
+        sombra_on = sh.get("ligada", True)
+
+        def contorno_px(t):
+            return max(1, int(t * float(cont.get("larg", 0.06)))) if cont else 0
+
         fonte = _achar_fonte(cam["f"], tam)
-        while tam > 12 and fonte.getlength(txt) > W * 0.9:
+        while tam > 12 and fonte.getlength(txt) + 2 * contorno_px(tam) > W * 0.9:
             tam = int(tam * 0.92)
             fonte = _achar_fonte(cam["f"], tam)
-        m = int(tam * 0.5)
+        sw = contorno_px(tam)
+        raio_b = max(2, int(tam * float(brilho.get("raio", 0.25)))) if brilho else 0
+        m = int(tam * 0.5) + sw + raio_b * 3
         larg = int(fonte.getlength(txt)) + 2 * m
         alt = int(tam * 1.5) + 2 * m
+        centro = (larg / 2, alt / 2)
         base = Image.new("RGBA", (larg, alt), (0, 0, 0, 0))
         d = ImageDraw.Draw(base)
-        d.text((larg / 2, alt / 2), txt, font=fonte, fill=cam["cor"] + (255,), anchor="mm")
-        sombra = Image.new("RGBA", (larg, alt), (0, 0, 0, 0))
-        sombra.putalpha(base.getchannel("A").point(lambda v: int(v * 0.65)))
-        sombra = Image.merge("RGBA", (Image.new("L", (larg, alt), 0),) * 3 + (sombra.getchannel("A"),))
-        sombra = sombra.filter(ImageFilter.GaussianBlur(max(2, tam // 18)))
-        desl = max(2, tam // 16)
+        d.text(centro, txt, font=fonte, fill=tuple(cam["cor"]) + (255,), anchor="mm",
+               stroke_width=sw, stroke_fill=tuple(cont.get("cor", (0, 0, 0)))[:3] + (255,) if cont else None)
         img = Image.new("RGBA", (larg, alt), (0, 0, 0, 0))
-        img.alpha_composite(sombra, (desl // 2, desl))
+        if tarja:
+            bx = d.textbbox(centro, txt, font=fonte, anchor="mm", stroke_width=sw)
+            pad = int(tam * float(tarja.get("pad", 0.25)))
+            raio = int(tam * float(tarja.get("raio", 0.25)))
+            cor_t = tuple(int(c) for c in tarja.get("cor", (0, 0, 0)))[:3] + (int(255 * float(tarja.get("opac", 0.75))),)
+            ImageDraw.Draw(img).rounded_rectangle((bx[0] - pad, bx[1] - pad * 0.6, bx[2] + pad, bx[3] + pad * 0.6),
+                                                  radius=raio, fill=cor_t)
+        if brilho:
+            glow = Image.new("RGBA", (larg, alt), tuple(int(c) for c in brilho.get("cor", cam["cor"]))[:3] + (0,))
+            a = base.getchannel("A").filter(ImageFilter.GaussianBlur(raio_b))
+            k = float(brilho.get("forca", 0.8)) * 2.0
+            glow.putalpha(a.point(lambda v, k=k: int(min(255, v * k))))
+            img.alpha_composite(glow)
+        if sombra_on:
+            op = float(sh.get("opac", 0.65))
+            sombra = Image.new("RGBA", (larg, alt), (0, 0, 0, 0))
+            sombra.putalpha(base.getchannel("A").point(lambda v, op=op: int(v * op)))
+            cor_s = tuple(int(c) for c in sh.get("cor", (0, 0, 0)))[:3]
+            sombra = Image.merge("RGBA", tuple(Image.new("L", (larg, alt), c) for c in cor_s) + (sombra.getchannel("A"),))
+            sombra = sombra.filter(ImageFilter.GaussianBlur(max(1, int(tam * float(sh.get("blur", 1 / 18.0))))))
+            desl = max(1, int(tam * float(sh.get("dist", 1 / 16.0))))
+            img.alpha_composite(sombra, (desl // 2, desl))
         img.alpha_composite(base)
         if cam.get("rot"):
             img = img.rotate(cam["rot"], resample=Image.BICUBIC, expand=True)
-        saida.append((img, W / 2.0, H * cam["y"]))
+        saida.append((img, W * cam.get("x", 0.5), H * cam["y"]))
     return saida
 
 
-def _quadro_legenda(sprites, W, H, t, dur):
-    """Monta o quadro da legenda no tempo t (segundos desde o início dela). Entrada com 'pop' e saída suave."""
+def _quadro_legenda(sprites, W, H, t, dur, anim=None):
+    """Monta o quadro da legenda no tempo t (segundos desde o início dela), com a animação do estilo."""
     from PIL import Image
+    an = anim or ANIM_PADRAO
+    ent, d_ent, atraso = an["entrada"], an["duracao"], an["atraso"]
     quadro = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     for i, (img, cx, cy) in enumerate(sprites):
-        te = t - i * 0.07
+        te = t - i * atraso
         saida_t = dur - t
-        if te <= 0:
+        if te <= 0 and ent != "nenhuma":
             continue
-        esc, alfa = 1.0, 1.0
-        if te < 0.28:
-            k = te / 0.28
-            esc = 0.75 + 0.25 * k + 0.07 * math.sin(k * math.pi)
-            alfa = min(1.0, te / 0.14)
-        if saida_t < 0.18:
-            k = max(0.0, saida_t / 0.18)
-            alfa = min(alfa, k)
-            esc *= 0.96 + 0.04 * k
+        esc, alfa, dy, corte = 1.0, 1.0, 0.0, 1.0
+        k = min(1.0, max(0.0, te / d_ent))
+        suave = 1 - (1 - k) ** 3
+        if te < d_ent and ent != "nenhuma":
+            if ent == "pop":
+                esc = 0.75 + 0.25 * k + 0.07 * math.sin(k * math.pi)
+                alfa = min(1.0, te / (d_ent / 2))
+            elif ent == "fade":
+                alfa = suave
+            elif ent == "subir":
+                dy, alfa = (1 - suave) * 0.06 * H, suave
+            elif ent == "descer":
+                dy, alfa = -(1 - suave) * 0.06 * H, suave
+            elif ent == "zoom":
+                esc, alfa = 1.35 - 0.35 * suave, suave
+            elif ent == "quicar":
+                esc = max(0.05, 1 - math.exp(-5 * k) * math.cos(k * 3 * math.pi))
+                alfa = min(1.0, te / 0.1)
+            elif ent == "digitar":
+                corte = k
+        if an["saida"] == "fade" and saida_t < 0.18:
+            ks = max(0.0, saida_t / 0.18)
+            alfa = min(alfa, ks)
+            esc *= 0.96 + 0.04 * ks
         if alfa <= 0.01:
             continue
         s = img
+        x0 = cx - img.width / 2
+        if corte < 0.999:
+            s = img.crop((0, 0, max(1, int(img.width * corte)), img.height))
         if abs(esc - 1.0) > 0.003:
-            s = img.resize((max(1, int(img.width * esc)), max(1, int(img.height * esc))), Image.BILINEAR)
+            s = s.resize((max(1, int(s.width * esc)), max(1, int(s.height * esc))), Image.BILINEAR)
         if alfa < 0.999:
             s = s.copy()
             s.putalpha(s.getchannel("A").point(lambda v, a=alfa: int(v * a)))
-        quadro.alpha_composite(s, (int(cx - s.width / 2), int(cy - s.height / 2)))
+        px = int(x0) if corte < 0.999 else int(cx - s.width / 2)
+        py = int(cy + dy - s.height / 2)
+        if px < 0 or py < 0 or px + s.width > W or py + s.height > H:  # recorta o que passa da tela
+            tela = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            tela.paste(s, (px, py))
+            quadro.alpha_composite(tela)
+        else:
+            quadro.alpha_composite(s, (px, py))
     return quadro
+
+
+def renderizar_previa(defn, texto, saida_png, W=1280, H=720, recorte=(640, 300)):
+    """Desenha o estilo parado (como fica no meio da legenda) sobre um fundo escuro e salva um PNG."""
+    from PIL import Image
+    d = _def_estilo(defn)
+    sp = _sprites_legenda(defn, texto, W, H)
+    quadro = _quadro_legenda(sp, W, H, 5.0, 99.0, d["anim"])
+    fundo = Image.new("RGBA", (W, H), (36, 36, 52, 255))
+    fundo.alpha_composite(quadro)
+    if recorte:
+        cw, ch = recorte
+        x0, y0 = (W - cw) // 2, int(H * 0.5 - ch / 2)
+        fundo = fundo.crop((x0, y0, x0 + cw, y0 + ch))
+    os.makedirs(os.path.dirname(saida_png), exist_ok=True)
+    fundo.convert("RGB").save(saida_png)
+
+
+def _fonte_nome(caminho):
+    from PIL import ImageFont
+    try:
+        fam, est = ImageFont.truetype(caminho, 20).getname()
+        return (fam + (" " + est if est and est.lower() not in ("regular", "normal") else "")).strip()
+    except Exception:
+        return os.path.splitext(os.path.basename(caminho))[0]
+
+
+_CACHE_FONTES = None
+
+
+def listar_fontes():
+    global _CACHE_FONTES
+    if _CACHE_FONTES is not None:
+        return _CACHE_FONTES
+    pastas = [os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Windows", "Fonts"),
+              os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts")]
+    achadas = {}
+    for p in pastas:
+        if not os.path.isdir(p):
+            continue
+        for nome in os.listdir(p):
+            base, ext = os.path.splitext(nome)
+            if ext.lower() in (".ttf", ".otf") and base not in achadas:
+                achadas[base] = _fonte_nome(os.path.join(p, nome))
+    _CACHE_FONTES = sorted(({"id": k, "nome": v} for k, v in achadas.items()), key=lambda x: x["nome"].lower())
+    return _CACHE_FONTES
+
+
+def salvar_estilo(nome, defn):
+    nome = _nome_seguro(nome)
+    if not nome:
+        raise RuntimeError("Dê um nome ao estilo (só letras, números e espaços).")
+    if nome in ESTILOS_OVERLAY or nome in ESTILOS or nome == "aleatorio":
+        raise RuntimeError("Esse nome já é de um modelo pronto. Escolha outro.")
+    d = _limpar_def(defn)
+    os.makedirs(_pasta_estilos(), exist_ok=True)
+    slug = re.sub(r"\s+", "_", nome)
+    with open(os.path.join(_pasta_estilos(), slug + ".json"), "w", encoding="utf-8") as f:
+        json.dump({"nome": nome, "def": d}, f, ensure_ascii=False, indent=1)
+    renderizar_previa(d, "Seu texto aparece aqui", os.path.join(_RAIZ, "painel", "img", slug + ".png"))
+    return {"nome": nome}
+
+
+def excluir_estilo(nome):
+    nome = _nome_seguro(nome)
+    slug = re.sub(r"\s+", "_", nome)
+    for arq in (os.path.join(_pasta_estilos(), slug + ".json"), os.path.join(_RAIZ, "painel", "img", slug + ".png")):
+        if os.path.isfile(arq):
+            os.remove(arq)
+    return {"ok": True}
 
 
 def _registro_overlay(novos=None):
@@ -1755,8 +1971,7 @@ def limpar_overlays(em_uso, horas=24):
 def gerar_overlay(blocos, estilo, W, H, fps, saida, separado=False):
     """blocos: [(inicio, fim, texto)] em segundos (já em ordem). Gera UM vídeo .mov com transparência."""
     import tempfile
-    if estilo not in ESTILOS_OVERLAY:
-        raise RuntimeError("Estilo desconhecido: " + str(estilo))
+    anim_est = _def_estilo(estilo)["anim"]
     W, H = int(W) // 2 * 2, int(H) // 2 * 2
     fps = float(fps)
     pasta = tempfile.mkdtemp(prefix="ovl_")
@@ -1792,14 +2007,15 @@ def gerar_overlay(blocos, estilo, W, H, fps, saida, separado=False):
                                   "-s", "%dx%d" % (W, H), "-r", str(fps), "-i", "-"] + enc + [arq], stdin=subprocess.PIPE)
             dur = n / fps
             estatico = None
+            t_ent = _tempo_entrada(anim_est, len(sp))
             for k in range(n):
                 t = k / fps
-                if 0.5 < t < dur - 0.2:
+                if t_ent < t < dur - 0.2:
                     if estatico is None:
-                        estatico = _quadro_legenda(sp, W, H, 1.0, 99.0).tobytes()
+                        estatico = _quadro_legenda(sp, W, H, 99.0, 1e6, anim_est).tobytes()
                     p.stdin.write(estatico)
                 else:
-                    p.stdin.write(_quadro_legenda(sp, W, H, t, dur).tobytes())
+                    p.stdin.write(_quadro_legenda(sp, W, H, t, dur, anim_est).tobytes())
             p.stdin.close()
             if p.wait() != 0:
                 raise RuntimeError("O ffmpeg falhou ao desenhar a legenda %d." % (i + 1))
@@ -1825,14 +2041,15 @@ def gerar_overlay(blocos, estilo, W, H, fps, saida, separado=False):
                              stdin=subprocess.PIPE)
         dur = n / fps
         estatico = None
+        t_ent = _tempo_entrada(anim_est, len(sp))
         for k in range(n):
             t = k / fps
-            if 0.5 < t < dur - 0.2:
+            if t_ent < t < dur - 0.2:
                 if estatico is None:
-                    estatico = _quadro_legenda(sp, W, H, 1.0, 99.0).tobytes()
+                    estatico = _quadro_legenda(sp, W, H, 99.0, 1e6, anim_est).tobytes()
                 p.stdin.write(estatico)
             else:
-                p.stdin.write(_quadro_legenda(sp, W, H, t, dur).tobytes())
+                p.stdin.write(_quadro_legenda(sp, W, H, t, dur, anim_est).tobytes())
         p.stdin.close()
         if p.wait() != 0:
             raise RuntimeError("O ffmpeg falhou ao desenhar a legenda %d." % (i + 1))
@@ -1886,7 +2103,7 @@ def legendas_estilizadas(wav, inicio, fim, modo, estilo, pasta_saida, enxuto, se
     if not palavras:
         raise RuntimeError("Não há falas nesse intervalo.")
     blocos = (legendas_palavra_a_palavra(palavras) if modo == "curtas"
-              else legendas_em_blocos(palavras, max_chars=(24 if estilo.startswith("Criativo") else 30),
+              else legendas_em_blocos(palavras, max_chars=(24 if eh_estilo_overlay(estilo) else 30),
                                       max_dur=3.0))
     sorteio = random.Random(semente)
     nomes = list(ESTILOS)
@@ -1895,7 +2112,7 @@ def legendas_estilizadas(wav, inicio, fim, modo, estilo, pasta_saida, enxuto, se
     for i, (ini, fi, texto) in enumerate(blocos):
         texto = re.sub(r"(\w) -(\w)", r"\1-\2", texto)  # "Bem -vindos" -> "Bem-vindos"
         est = sorteio.choice(nomes) if estilo == "aleatorio" else estilo
-        if est in MODELOS_PROJETO and overlay:  # desenhado pelo programa (um vídeo transparente só)
+        if (est in MODELOS_PROJETO or est in estilos_usuario()) and overlay:  # desenhado pelo programa (um vídeo transparente só)
             saida.append({"ini": ini, "fim": fi, "texto": texto, "estilo": est, "tipo": "overlay"})
             continue
         if est in MODELOS_PROJETO:  # modelo artístico guardado em projeto do Premiere
@@ -2208,6 +2425,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(dados)
             else:
                 self._responder({"erro": "imagem não encontrada"}, 404)
+        elif self.path == "/estilos":
+            usuario = estilos_usuario()
+            todos = [{"nome": n, "def": _limpar_def({"linhas": l}), "usuario": False} for n, l in ESTILOS_OVERLAY.items()]
+            todos += [{"nome": n, "def": d, "usuario": True} for n, d in usuario.items()]
+            self._responder({"estilos": todos})
+        elif self.path == "/estilos/fontes":
+            self._responder({"fontes": listar_fontes()})
         elif self.path == "/atualizacao/verificar":
             self._responder(verificar_atualizacao())
         elif self.path.startswith("/painel/pacote"):
@@ -2254,6 +2478,20 @@ class Handler(BaseHTTPRequestHandler):
                         return self._responder({"erro": f"arquivo não encontrado: {o}"}, 400)
                 return self._responder(avaliar_audios(corpo.get("faixas", []), cams, corpo.get("pessoas", []), corpo.get("recorte")))
 
+            if self.path == "/estilo/salvar":
+                try:
+                    return self._responder(salvar_estilo(corpo.get("nome", ""), corpo.get("def") or {}))
+                except Exception as e:
+                    return self._responder({"erro": str(e)}, 400)
+            if self.path == "/estilo/excluir":
+                return self._responder(excluir_estilo(corpo.get("nome", "")))
+            if self.path == "/estilo/previa":
+                try:
+                    renderizar_previa(corpo.get("def") or {}, corpo.get("texto") or "Seu texto aparece aqui",
+                                      os.path.join(_RAIZ, "painel", "img", "prev_editor.png"))
+                    return self._responder({"ok": True})
+                except Exception as e:
+                    return self._responder({"erro": str(e)}, 400)
             if self.path == "/legenda/limpar_disco":
                 return self._responder(limpar_overlays(corpo.get("emUso", [])))
             if self.path == "/legenda/info_lote":
