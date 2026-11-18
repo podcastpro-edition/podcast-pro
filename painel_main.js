@@ -1172,28 +1172,40 @@ const legendar = (modo) => () => semPressa(async () => {
         "Isso pode levar alguns minutos. Não feche o Premiere.");
       const ov = await chamar("/legendas_overlay", {
         estilo: ESTILO, w: LARG, h: ALT, fps: FPS,
+        separado: true,
         blocos: todas.map((l) => ({ a: l.seqIni - base, b: l.seqFim - base, texto: l.texto })),
       });
-      etapa = "importar o vídeo das legendas";
-      mostrar("Colocando o vídeo das legendas na trilha V" + (iv + 1) + "...");
+      etapa = "importar as legendas";
+      mostrar("Colocando " + ov.itens.length + " legendas na trilha V" + (iv + 1) + "...");
       const raiz = await projeto.getRootItem();
-      const nomeArq = ov.arquivo.split(/[\\/]/).pop();
-      const antes = (await raiz.getItems()).filter((it) => it.name === nomeArq).length;
-      await projeto.importFiles([ov.arquivo], true, raiz, false);
-      let item = null;
-      for (let w = 0; w < 20 && !item; w++) {
-        await dormir(500);
-        const lst = (await raiz.getItems()).filter((it) => it.name === nomeArq);
-        if (lst.length > antes) item = lst[lst.length - 1];
+      const nomeDe = (c) => c.split(/[\\/]/).pop();
+      await projeto.importFiles(ov.itens.map((x) => x.arquivo), true, raiz, false);
+      await dormir(1500);
+      let todosItens = [];
+      for (let w = 0; w < 30; w++) {
+        todosItens = await raiz.getItems();
+        const nomes = new Set(todosItens.map((it) => it.name));
+        if (ov.itens.every((x) => nomes.has(nomeDe(x.arquivo)))) break;
+        await dormir(1000);
       }
-      if (!item) throw new Error("o Premiere não importou o vídeo das legendas");
-      etapa = "colocar o vídeo das legendas na timeline";
+      const porNome = new Map(todosItens.map((it) => [it.name, it]));
       const edOv = await ppro.SequenceEditor.getEditor(seq);
-      const tOv = await ppro.TickTime.createWithSeconds(base + (ov.inicio || 0));
-      await executar(projeto, "Legendas: colocar", () => edOv.createOverwriteItemAction(item, tOv, iv, ia));
-      mostrar("Pronto! " + todas.length + " legendas " + ESTILO + " num único clipe na trilha V" + (iv + 1) +
-        " (" + Math.floor(base / 60) + ":" + String(Math.floor(base % 60)).padStart(2, "0") + " em diante).\n" +
-        "Fala lida da trilha A" + (ia + 1) + ". (Para desfazer: Ctrl+Z, ou apague o clipe.)");
+      let postos = 0;
+      const faltaram = [];
+      for (let i = 0; i < ov.itens.length; i++) {
+        const x = ov.itens[i];
+        const item = porNome.get(nomeDe(x.arquivo));
+        if (!item) { faltaram.push(i + 1); continue; }
+        etapa = "colocar a legenda " + (i + 1);
+        const tOv = await ppro.TickTime.createWithSeconds(base + x.a);
+        await executar(projeto, "Legenda: colocar", () => edOv.createOverwriteItemAction(item, tOv, iv, ia));
+        postos++;
+        if (i % 5 === 0) mostrar("Colocando legendas na timeline: " + (i + 1) + " de " + ov.itens.length + "...");
+      }
+      mostrar("Pronto! " + postos + " legendas " + ESTILO + " na trilha V" + (iv + 1) + ". Cada legenda é um clipe: " +
+        "arraste para acertar o tempo e puxe a ponta para mudar a duração.\n" +
+        "Fala lida da trilha A" + (ia + 1) + ". (Para desfazer: Ctrl+Z.)" +
+        (faltaram.length ? "\nNão importadas: " + faltaram.join(", ") : ""));
       return;
     }
 

@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.24"
+VERSAO = "1.0.25"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1022,7 +1022,7 @@ def _quadro_legenda(sprites, W, H, t, dur):
     return quadro
 
 
-def gerar_overlay(blocos, estilo, W, H, fps, saida):
+def gerar_overlay(blocos, estilo, W, H, fps, saida, separado=False):
     """blocos: [(inicio, fim, texto)] em segundos (já em ordem). Gera UM vídeo .mov com transparência."""
     import tempfile
     if estilo not in ESTILOS_OVERLAY:
@@ -1050,6 +1050,33 @@ def gerar_overlay(blocos, estilo, W, H, fps, saida):
                         "color=c=black@0.0:s=%dx%d:r=%s,format=rgba" % (W, H, fps), "-frames:v", str(n)] + enc + [arq],
                        check=True)
 
+    if separado:  # um arquivo por legenda (cada uma vira um clipe que dá para mover e aparar)
+        pasta_sep = os.path.splitext(saida)[0] + "_legendas"
+        os.makedirs(pasta_sep, exist_ok=True)
+        lista_sep = []
+        for i, (a, b, tx) in enumerate(ajust):
+            n = max(2, int(round((b - a) * fps)))
+            sp = _sprites_legenda(estilo, tx, W, H)
+            arq = os.path.join(pasta_sep, "leg%05d_%s.mov" % (i + 1, os.path.basename(saida)[8:-4]))
+            p = subprocess.Popen(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba",
+                                  "-s", "%dx%d" % (W, H), "-r", str(fps), "-i", "-"] + enc + [arq], stdin=subprocess.PIPE)
+            dur = n / fps
+            estatico = None
+            for k in range(n):
+                t = k / fps
+                if 0.5 < t < dur - 0.2:
+                    if estatico is None:
+                        estatico = _quadro_legenda(sp, W, H, 1.0, 99.0).tobytes()
+                    p.stdin.write(estatico)
+                else:
+                    p.stdin.write(_quadro_legenda(sp, W, H, t, dur).tobytes())
+            p.stdin.close()
+            if p.wait() != 0:
+                raise RuntimeError("O ffmpeg falhou ao desenhar a legenda %d." % (i + 1))
+            lista_sep.append({"arquivo": arq, "a": a, "b": b, "texto": tx})
+        import shutil
+        shutil.rmtree(pasta, ignore_errors=True)
+        return {"itens": lista_sep, "legendas": len(lista_sep)}
     for i, (a, b, tx) in enumerate(ajust):
         fa = int(round((a - t0) * fps))
         fb = max(fa + 2, int(round((b - t0) * fps)))
@@ -1486,7 +1513,8 @@ class Handler(BaseHTTPRequestHandler):
                 blocos = [(float(b["a"]), float(b["b"]), str(b["texto"])) for b in corpo["blocos"]]
                 return self._responder(gerar_overlay(blocos, corpo.get("estilo"), corpo.get("w", 1920),
                                                      corpo.get("h", 1080), corpo.get("fps", 30),
-                                                     os.path.join(pasta_ov, nome_ov)))
+                                                     os.path.join(pasta_ov, nome_ov),
+                                                     bool(corpo.get("separado", False))))
 
             if self.path == "/modelo/preparar":
                 try:
