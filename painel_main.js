@@ -2777,7 +2777,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     };
     posicionar(obj[chave]);
     const caixaNum = document.createElement("input");
-    caixaNum.type = "text"; caixaNum.style.width = "52px"; caixaNum.style.marginLeft = "6px"; caixaNum.style.textAlign = "center";
+    caixaNum.type = "text"; caixaNum.style.width = "52px"; caixaNum.style.height = "26px"; caixaNum.style.marginLeft = "6px"; caixaNum.style.textAlign = "center";
     const fmt = (v) => Number(v).toFixed(casas || 0).replace(".", ",");
     caixaNum.value = fmt(obj[chave]);
     const aplicar = (v) => { obj[chave] = Math.max(min, Math.min(max, Math.round(v * 1000) / 1000)); agendarPrevia(); };
@@ -2804,8 +2804,8 @@ $("btnTesteModelo").addEventListener("click", async () => {
   function linha(rotulo, controle) { const r = el("div", "ed-lin"); r.appendChild(el("div", "rt", rotulo)); r.appendChild(controle); return r; }
   // botão redondo liga/desliga: círculo com uma bolinha dentro quando está ligado
   function bolinha(ligado, aoClicar) {
-    const c = el("div"); c.style.width = "22px"; c.style.height = "22px"; c.style.borderRadius = "11px"; c.style.display = "flex"; c.style.alignItems = "center"; c.style.justifyContent = "center"; c.style.cursor = "pointer"; c.style.marginRight = "6px";
-    const pintar = (on) => { c.style.border = "2px solid " + (on ? "#7b61ff" : "#8a8a9c"); c.innerHTML = ""; if (on) { const d = el("div"); d.style.width = "10px"; d.style.height = "10px"; d.style.borderRadius = "5px"; d.style.backgroundColor = "#7b61ff"; c.appendChild(d); } };
+    const c = el("div"); c.style.width = "18px"; c.style.height = "18px"; c.style.borderRadius = "9px"; c.style.display = "flex"; c.style.alignItems = "center"; c.style.justifyContent = "center"; c.style.cursor = "pointer"; c.style.marginRight = "6px";
+    const pintar = (on) => { c.style.border = "2px solid " + (on ? "#7b61ff" : "#8a8a9c"); c.innerHTML = ""; if (on) { const d = el("div"); d.style.width = "8px"; d.style.height = "8px"; d.style.borderRadius = "4px"; d.style.backgroundColor = "#7b61ff"; c.appendChild(d); } };
     let on = !!ligado; pintar(on);
     c.addEventListener("click", () => { on = !on; pintar(on); aoClicar(on); });
     return c;
@@ -2816,17 +2816,20 @@ $("btnTesteModelo").addEventListener("click", async () => {
   function campoCor(obj, chave) {
     const w = el("div");
     const topo = el("div"); topo.style.display = "flex"; topo.style.alignItems = "center";
-    const i = document.createElement("input"); i.type = "text"; i.value = obj[chave]; i.style.width = "100px";
+    const i = document.createElement("input"); i.type = "text"; i.value = obj[chave]; i.style.width = "100px"; i.style.height = "26px";
     const aplicarCor = (c) => { obj[chave] = c; i.value = c; amostra.style.backgroundColor = c; agendarPrevia(); };
     const amostra = el("div"); amostra.style.width = "26px"; amostra.style.height = "26px"; amostra.style.borderRadius = "13px"; amostra.style.border = "1px solid #77778a"; amostra.style.marginLeft = "8px"; amostra.style.backgroundColor = obj[chave];
     i.addEventListener("change", () => { if (hex2rgb(i.value)) aplicarCor("#" + i.value.replace("#", "").toUpperCase()); else i.value = obj[chave]; });
     // conta-gotas: pega a cor de qualquer lugar da tela (clique na cor desejada; Esc cancela)
-    const gota = el("div", "ed-btn", "Conta-gotas"); gota.style.margin = "0 0 0 8px"; gota.style.padding = "5px 10px"; gota.style.fontSize = "12px";
+    const gota = el("div", "ed-btn"); gota.style.margin = "0 0 0 8px"; gota.style.padding = "3px 8px"; gota.style.width = "auto";
+    const icone = document.createElement("img"); icone.src = SERVICO + "/icone/conta_gotas.png"; icone.style.width = "22px"; icone.style.height = "22px";
+    gota.appendChild(icone);
     let ativo = null;
-    const parar = (textoFinal) => { if (ativo) { clearInterval(ativo.t); ativo = null; } gota.textContent = "Conta-gotas"; };
+    const parar = () => { if (ativo) { clearInterval(ativo.t); ativo = null; chamar("/cor_tela", { modo: "fim" }).catch(() => {}); } gota.style.backgroundColor = ""; };
     gota.addEventListener("click", () => {
       if (ativo) { parar(); i.value = obj[chave]; amostra.style.backgroundColor = obj[chave]; return; }
-      gota.textContent = "Clique na cor... (Esc cancela)";
+      gota.style.backgroundColor = "#6a58e0";
+      chamar("/cor_tela", { modo: "inicio" }).catch(() => {});
       const est = { viuSolto: false, ocupado: false, inicio: Date.now(), t: null };
       ativo = est;
       est.t = setInterval(async () => {

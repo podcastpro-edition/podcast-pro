@@ -14,6 +14,7 @@ import os
 import math
 import re
 import subprocess
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import sys
@@ -41,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.67"
+VERSAO = "1.0.68"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1852,6 +1853,68 @@ def _quadro_legenda(sprites, W, H, t, dur, anim=None):
     return quadro
 
 
+def _png_conta_gotas(tam=32):
+    """Ícone de conta-gotas (branco com contorno escuro), ponta no canto inferior esquerdo."""
+    from PIL import Image, ImageDraw
+    import io
+    k = 8
+    S = tam * k
+    im = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    u = S / 32.0
+    def forma(cor, extra):
+        e = extra * u
+        d.line([(22 * u, 10 * u), (9 * u, 23 * u)], fill=cor, width=int(6 * u + 2 * e))
+        d.line([(9 * u, 23 * u), (3.5 * u, 28.5 * u)], fill=cor, width=int(2.4 * u + 2 * e))
+        d.ellipse((20 * u - e, 2 * u - e, 30 * u + e, 12 * u + e), fill=cor)
+        d.line([(19 * u, 8 * u), (24 * u, 13 * u)], fill=cor, width=int(3 * u + 2 * e))
+    forma((20, 20, 30, 255), 1.3)
+    forma((255, 255, 255, 255), 0)
+    im = im.resize((tam, tam), Image.LANCZOS)
+    b = io.BytesIO()
+    im.save(b, "PNG")
+    return b.getvalue()
+
+
+_CURSOR_TROCADO = {"ativo": False, "ultimo": 0.0}
+
+
+def _cursor_conta_gotas(ligar):
+    """Troca (ou restaura) o cursor do mouse no Windows inteiro pelo conta-gotas."""
+    if os.name != "nt":
+        return
+    import ctypes
+    import struct
+    import tempfile
+    import time
+    u = ctypes.windll.user32
+    if not ligar:
+        u.SystemParametersInfoW(0x57, 0, None, 0)  # SPI_SETCURSORS: volta ao padrão
+        _CURSOR_TROCADO["ativo"] = False
+        return
+    _CURSOR_TROCADO["ultimo"] = time.time()
+    if _CURSOR_TROCADO["ativo"]:
+        return
+    png = _png_conta_gotas(32)
+    cur = struct.pack("<HHH", 0, 2, 1) + struct.pack("<BBBBHHII", 32, 32, 0, 0, 3, 28, len(png), 22) + png
+    caminho = os.path.join(tempfile.gettempdir(), "podcast_pro_conta_gotas.cur")
+    open(caminho, "wb").write(cur)
+    u.LoadImageW.restype = ctypes.c_void_p
+    u.SetSystemCursor.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+    for ocr in (32512, 32513, 32649, 32515, 32514):  # seta, texto, mão, cruz, espera
+        h = u.LoadImageW(None, caminho, 2, 32, 32, 0x10)
+        if h:
+            u.SetSystemCursor(h, ocr)
+    _CURSOR_TROCADO["ativo"] = True
+
+    def vigia():  # se o painel parar de perguntar (fechou, travou), devolve o cursor normal
+        while _CURSOR_TROCADO["ativo"]:
+            time.sleep(1.0)
+            if time.time() - _CURSOR_TROCADO["ultimo"] > 3.0:
+                _cursor_conta_gotas(False)
+    threading.Thread(target=vigia, daemon=True).start()
+
+
 def cor_da_tela():
     """Conta-gotas: cor do pixel sob o mouse (qualquer janela, no Windows) e se o botão esquerdo/Esc estão apertados."""
     if os.name != "nt":
@@ -1876,6 +1939,8 @@ def cor_da_tela():
     if c == 0xFFFFFFFF:
         c = 0
     cor = "#%02X%02X%02X" % (c & 255, (c >> 8) & 255, (c >> 16) & 255)
+    import time
+    _CURSOR_TROCADO["ultimo"] = time.time()
     return {"cor": cor, "clicando": bool(u.GetAsyncKeyState(1) & 0x8000), "esc": bool(u.GetAsyncKeyState(0x1B) & 0x8000)}
 
 
@@ -2476,6 +2541,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/ping":
             self._responder({"ok": True, "versao": VERSAO})
+        elif self.path == "/icone/conta_gotas.png":
+            dados = _png_conta_gotas(32)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(dados)))
+            self.end_headers()
+            self.wfile.write(dados)
         elif self.path.startswith("/painel/img/"):
             nome = os.path.basename(self.path.split("?")[0])
             arq = os.path.join(_RAIZ, "painel", "img", nome)
@@ -2565,6 +2638,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._responder(excluir_estilo(corpo.get("nome", "")))
             if self.path == "/cor_tela":
                 try:
+                    modo = corpo.get("modo")
+                    if modo == "inicio":
+                        _cursor_conta_gotas(True)
+                        return self._responder({"ok": True})
+                    if modo == "fim":
+                        _cursor_conta_gotas(False)
+                        return self._responder({"ok": True})
                     return self._responder(cor_da_tela())
                 except Exception as e:
                     return self._responder({"erro": str(e)}, 400)
