@@ -2734,9 +2734,11 @@ $("btnTesteModelo").addEventListener("click", async () => {
     };
   }
   let ULTIMA_PREVIA = "";
-  function agendarPrevia() {
+  function agendarPrevia(semReiniciar) {
+    if (semReiniciar && timerPrevia) return; // durante o arraste/segurar, atualiza a cada 250 ms
     if (timerPrevia) clearTimeout(timerPrevia);
     timerPrevia = setTimeout(async () => {
+      timerPrevia = null;
       try {
         await chamar("/estilo/previa", { def: paraDef(), formato: E.formato || "h", guias: !!E.guias });
         const im = $("edPrevia");
@@ -2833,30 +2835,33 @@ $("btnTesteModelo").addEventListener("click", async () => {
     };
     pintarAtual();
     const lista = el("div", "ed-flista"); lista.style.display = "none";
-    let limite = 40, filtro = "";
+    let filtro = "", rodada = 0;
     const pintarLista = () => {
       lista.innerHTML = "";
       const busca = document.createElement("input"); busca.type = "text"; busca.placeholder = "Buscar fonte..."; busca.value = filtro;
-      busca.addEventListener("change", () => { filtro = busca.value.trim().toLowerCase(); limite = 40; pintarLista(); });
+      busca.addEventListener("change", () => { filtro = busca.value.trim().toLowerCase(); pintarLista(); });
       lista.appendChild(busca);
       const achadas = fontes.filter((f) => !filtro || f.nome.toLowerCase().indexOf(filtro) >= 0);
-      achadas.slice(0, limite).forEach((f) => {
-        const it = el("div", "ed-fitem" + (f.id === l.f ? " sel" : ""));
-        const im = document.createElement("img"); im.src = urlFonte(f.id); it.appendChild(im);
-        it.addEventListener("click", () => { l.f = f.id; lista.style.display = "none"; pintarAtual(); agendarPrevia(); });
-        lista.appendChild(it);
-      });
-      if (achadas.length > limite) {
-        const mais = el("div", "ed-btn", "Mostrar mais (" + (achadas.length - limite) + ")"); mais.style.margin = "4px 0 0";
-        mais.addEventListener("click", () => { limite += 40; pintarLista(); });
-        lista.appendChild(mais);
-      }
+      const minha = ++rodada;
+      let n = 0;
+      const lote = () => {
+        if (minha !== rodada || lista.style.display === "none") return;
+        achadas.slice(n, n + 15).forEach((f) => {
+          const it = el("div", "ed-fitem" + (f.id === l.f ? " sel" : ""));
+          const im = document.createElement("img"); im.src = urlFonte(f.id); it.appendChild(im);
+          it.addEventListener("click", () => { l.f = f.id; lista.style.display = "none"; rodada++; pintarAtual(); agendarPrevia(); });
+          lista.appendChild(it);
+        });
+        n += 15;
+        if (n < achadas.length) setTimeout(lote, 350); // vai carregando as outras sozinho
+      };
+      lote();
       if (!achadas.length) lista.appendChild(el("div", "dica", "Nenhuma fonte encontrada."));
     };
     atual.addEventListener("click", () => {
       const abrir = lista.style.display === "none";
       lista.style.display = abrir ? "block" : "none";
-      if (abrir) pintarLista();
+      if (abrir) pintarLista(); else rodada++;
     });
     w.appendChild(atual); w.appendChild(lista);
     return w;
@@ -2930,7 +2935,10 @@ $("btnTesteModelo").addEventListener("click", async () => {
     if (E.formato === "v") { im.style.width = "40%"; im.style.marginLeft = "auto"; im.style.marginRight = "auto"; }
     moldura.appendChild(im);
     // setas dentro da prévia: movem a linha selecionada (ou todas, se nenhuma estiver aberta)
-    const mover = (dx, dy) => {
+    let segurando = null;
+    const pararSeta = () => { if (segurando) { clearTimeout(segurando); clearInterval(segurando); segurando = null; desenhar(); agendarPrevia(); } };
+    document.addEventListener("mouseup", pararSeta);
+    const mover = (dx, dy, continuo) => {
       const alvo = (E.sel >= 0 && E.linhas[E.sel]) ? [E.linhas[E.sel]] : E.linhas;
       if (!dx && !dy) {
         const mx = alvo.reduce((a, l) => a + l.x, 0) / alvo.length, my = alvo.reduce((a, l) => a + l.y, 0) / alvo.length;
@@ -2938,16 +2946,22 @@ $("btnTesteModelo").addEventListener("click", async () => {
       }
       for (const l of alvo) { l.x = Math.max(5, Math.min(95, Math.round(l.x + dx))); l.y = Math.max(5, Math.min(95, Math.round(l.y + dy))); }
       E.msgMov = (alvo.length === 1 ? "Linha " + (E.sel + 1) : "Todas as linhas") + ": esquerda " + Math.round(alvo[0].x) + "%, altura " + Math.round(alvo[0].y) + "%";
+      if (continuo) { agendarPrevia(true); return; }
       desenhar(); agendarPrevia();
     };
-    const setas = [["↖", -5, -5], ["↑", 0, -5], ["↗", 5, -5], ["←", -5, 0], ["●", 0, 0], ["→", 5, 0], ["↙", -5, 5], ["↓", 0, 5], ["↘", 5, 5]];
+    const setas = [["↖", -3, -3], ["↑", 0, -3], ["↗", 3, -3], ["←", -3, 0], ["●", 0, 0], ["→", 3, 0], ["↙", -3, 3], ["↓", 0, 3], ["↘", 3, 3]];
     setas.forEach(([t, dx, dy], n) => {
       const r = Math.floor(n / 3), c = n % 3;
       const b = el("div", "", t);
       b.style.position = "absolute"; b.style.width = "26px"; b.style.height = "26px"; b.style.lineHeight = "26px"; b.style.textAlign = "center";
       b.style.right = (6 + (2 - c) * 28) + "px"; b.style.bottom = (6 + (2 - r) * 28) + "px";
       b.style.backgroundColor = "rgba(20,20,30,0.75)"; b.style.color = "#ffffff"; b.style.borderRadius = "6px"; b.style.cursor = "pointer"; b.style.fontSize = "14px";
-      b.addEventListener("click", (ev) => { ev.stopPropagation(); mover(dx, dy); });
+      b.addEventListener("mousedown", (ev) => {
+        ev.stopPropagation(); pararSeta();
+        mover(dx, dy, true);
+        if (!dx && !dy) { desenhar(); return; }
+        segurando = setTimeout(() => { segurando = setInterval(() => mover(dx, dy, true), 90); }, 350);
+      });
       moldura.appendChild(b);
     });
     prev.appendChild(moldura);
