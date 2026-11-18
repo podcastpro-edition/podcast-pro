@@ -2297,7 +2297,8 @@ $("btnAtualizar").addEventListener("click", async () => {
     assinatura = ass;
     gal.innerHTML = "";
     const fav = ops.filter((o) => favoritos.has(o.value));
-    const demais = ops.filter((o) => !fav.includes(o));
+    const meusE = window.ppEstilosImg || new Set();
+    const demais = ops.filter((o) => !fav.includes(o)).sort((a, b) => (meusE.has(b.value) ? 1 : 0) - (meusE.has(a.value) ? 1 : 0)); // meus estilos salvos primeiro
     const caixaFav = document.createElement("div"); caixaFav.className = "favoritos";
     fav.forEach((o) => caixaFav.appendChild(cartao(o)));
     gal.appendChild(caixaFav);
@@ -3097,10 +3098,16 @@ $("btnTesteModelo").addEventListener("click", async () => {
       else { const e = estilos.find((x) => x.nome === v); const d = ordenarPorProfundidade(doDef(e.def), e.def); E = { nome: e.usuario ? e.nome : "", base: v, editando: e.usuario ? e.nome : null, sel: 0, linhas: d.linhas, anim: d.anim }; }
       desenhar(); agendarPrevia();
     }));
-    topo.appendChild(el("div", "rt", "Nome do estilo")); topo.lastChild.style.fontSize = "12px"; topo.lastChild.style.marginTop = "8px";
-    const nome = document.createElement("input"); nome.type = "text"; nome.value = E.nome; nome.placeholder = "Ex.: Meu estilo 1";
-    nome.addEventListener("input", () => { E.nome = nome.value; });
-    topo.appendChild(nome);
+    const salvarTopo = el("div", "ed-btn verde", "💾 Salvar estilo"); salvarTopo.style.marginTop = "8px";
+    salvarTopo.addEventListener("click", () => {
+      if (!(E.nome || "").trim()) { // falta o nome: leva até o campo
+        mensagem("Escreva o nome do estilo no campo \"Nome do estilo\" (logo antes do botão Salvar, lá embaixo) e salve de novo.", true);
+        const campo = $("edNome"); if (campo) { try { campo.scrollIntoView(); campo.focus(); } catch (e) { /* segue */ } }
+        return;
+      }
+      salvarEstilo();
+    });
+    topo.appendChild(salvarTopo);
     caixa.appendChild(topo);
     const prev = el("div", "ed-card");
     prev.appendChild(el("div", "ed-tit", "Prévia (como a legenda fica parada)"));
@@ -3233,9 +3240,15 @@ $("btnTesteModelo").addEventListener("click", async () => {
       an.appendChild(linha("Saída suave (some devagar)", simNaoSaida({ v: E.anim.saida !== "nenhuma" })));
     }
     caixa.appendChild(an);
-    const salvar = el("div", "ed-btn verde", "💾 Salvar estilo");
+    const cNome = el("div", "ed-card");
+    cNome.appendChild(el("div", "rt", "Nome do estilo")); cNome.lastChild.style.fontSize = "12px";
+    const nome = document.createElement("input"); nome.type = "text"; nome.id = "edNome"; nome.value = E.nome; nome.placeholder = "Ex.: Meu estilo 1";
+    nome.addEventListener("input", () => { E.nome = nome.value; });
+    cNome.appendChild(nome);
+    const salvar = el("div", "ed-btn verde", "💾 Salvar estilo"); salvar.style.marginTop = "8px";
     salvar.addEventListener("click", salvarEstilo);
-    caixa.appendChild(salvar);
+    cNome.appendChild(salvar);
+    caixa.appendChild(cNome);
     if (E.editando) {
       const ex = el("div", "ed-btn verm", "🗑 Excluir este estilo");
       ex.addEventListener("click", excluirEstilo);
