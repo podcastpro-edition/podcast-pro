@@ -1966,3 +1966,100 @@ $("btnTesteModelo").addEventListener("click", async () => {
     } catch (e) { msg("Erro ao " + etapa + ": " + (e && e.message ? e.message : e), true); }
   });
 })();
+
+
+// ---- Corrigir o texto de TODAS as legendas Criativo de uma vez ----
+(function () {
+  const msg = (t, e) => { const m = $("msgTodasLeg"); if (m) { m.textContent = t; m.style.color = e ? "#ff8a80" : "#9a9a9a"; } };
+  const nomeArq = (c) => String(c).split(/[\\/]/).pop();
+  let lista = [];   // [{ nome, ini, fim, trilha, texto }]
+  async function lerTodas() {
+    const ppro = require("premierepro");
+    const projeto = await ppro.Project.getActiveProject();
+    const seq = await projeto.getActiveSequence();
+    if (!seq) throw new Error("Abra a sequência primeiro.");
+    const nV = await seq.getVideoTrackCount();
+    const achados = [];
+    for (let i = 0; i < nV; i++) {
+      const itens = await (await seq.getVideoTrack(i)).getTrackItems(1, false);
+      for (const c of itens) {
+        const nome = (await (await c.getProjectItem()).name) || "";
+        if (/^leg\d+_Criativo/.test(nome)) {
+          achados.push({ nome, ini: (await c.getStartTime()).seconds, fim: (await c.getEndTime()).seconds, trilha: i });
+        }
+      }
+    }
+    achados.sort((a, b) => a.ini - b.ini);
+    return { ppro, projeto, seq, achados };
+  }
+  $("btnLerTodas").addEventListener("click", async () => {
+    try {
+      msg("Lendo as legendas...");
+      const s = await lerTodas();
+      if (!s.achados.length) return msg("Não achei legendas Criativo nessa sequência.", true);
+      const r = await chamar("/legenda/info_lote", { nomes: s.achados.map((a) => a.nome) });
+      const semTexto = r.infos.filter((x) => !x).length;
+      lista = s.achados.map((a, i) => ({ ...a, texto: r.infos[i] ? r.infos[i].texto : "", estilo: r.infos[i] ? r.infos[i].estilo : null }));
+      $("txtTodasLeg").value = lista.map((x) => x.texto).join("\n");
+      msg(lista.length + " legendas carregadas." + (semTexto ? " " + semTexto + " sem texto guardado (feitas por versão antiga): não serão alteradas." : "") + " Corrija e clique em Aplicar.");
+    } catch (e) { msg(e && e.message ? e.message : String(e), true); }
+  });
+  $("btnAplicarTodas").addEventListener("click", async () => {
+    let etapa = "começar";
+    try {
+      if (!lista.length) return msg("Clique primeiro em Carregar.", true);
+      const linhas = $("txtTodasLeg").value.split(/\r?\n/);
+      while (linhas.length > lista.length && linhas[linhas.length - 1].trim() === "") linhas.pop();
+      if (linhas.length !== lista.length) return msg("O número de linhas mudou (" + linhas.length + " em vez de " + lista.length + "). Cada legenda precisa continuar numa linha só. Se quiser uma legenda vazia, deixe a linha em branco.", true);
+      const mudadas = [];
+      linhas.forEach((t, i) => { const n = t.trim(); if (lista[i].estilo && n && n !== lista[i].texto) mudadas.push(i); });
+      if (!mudadas.length) return msg("Nenhuma linha foi alterada.");
+      etapa = "desenhar as legendas";
+      msg("Desenhando " + mudadas.length + " legenda(s)...");
+      const s = await lerTodas();
+      // confere que a linha do clipe continua sendo o mesmo clipe (nome e início)
+      const mapa = new Map(s.achados.map((a) => [a.nome + "@" + a.ini.toFixed(2), a]));
+      let LARG = 1920, ALT = 1080;
+      try { const fs = await s.seq.getFrameSize(); if (fs && fs.width > 0) { LARG = fs.width; ALT = fs.height; } } catch (e) { /* padrão */ }
+      const porEstilo = {};
+      for (const i of mudadas) (porEstilo[lista[i].estilo] = porEstilo[lista[i].estilo] || []).push(i);
+      const novos = new Map(); // índice -> arquivo
+      for (const est of Object.keys(porEstilo)) {
+        const idx = porEstilo[est];
+        const ov = await chamar("/legendas_overlay", {
+          estilo: est, w: LARG, h: ALT, fps: 30, separado: true,
+          blocos: idx.map((i, k) => ({ a: k * 10, b: k * 10 + Math.max(0.4, lista[i].fim - lista[i].ini), texto: linhas[i].trim() })),
+        });
+        ov.itens.forEach((x, k) => novos.set(idx[k], x.arquivo));
+      }
+      etapa = "importar as legendas novas";
+      const raiz = await s.projeto.getRootItem();
+      await s.projeto.importFiles(Array.from(novos.values()), true, raiz, false);
+      await dormir(1500);
+      let todos = [];
+      for (let w = 0; w < 30; w++) {
+        todos = await raiz.getItems();
+        const nomes = new Set(todos.map((x) => x.name));
+        if (Array.from(novos.values()).every((a) => nomes.has(nomeArq(a)))) break;
+        await dormir(1000);
+      }
+      const porNome = new Map(todos.map((x) => [x.name, x]));
+      const ed = await s.ppro.SequenceEditor.getEditor(s.seq);
+      let feitas = 0;
+      const falhas = [];
+      for (const [i, arq] of novos) {
+        const item = porNome.get(nomeArq(arq));
+        const alvo = mapa.get(lista[i].nome + "@" + lista[i].ini.toFixed(2));
+        if (!item || !alvo) { falhas.push(i + 1); continue; }
+        etapa = "trocar a legenda " + (i + 1);
+        const t = await s.ppro.TickTime.createWithSeconds(alvo.ini);
+        await executar(s.projeto, "Legenda: corrigir texto", () => ed.createOverwriteItemAction(item, t, alvo.trilha, 0));
+        feitas++;
+        if (feitas % 5 === 0) msg("Trocando as legendas: " + feitas + " de " + novos.size + "...");
+      }
+      // atualiza a lista com os novos nomes/textos: peça para carregar de novo
+      lista = [];
+      msg("Pronto: " + feitas + " legenda(s) corrigida(s)." + (falhas.length ? " Não trocadas (linhas): " + falhas.join(", ") + " (o clipe foi movido; carregue de novo)." : "") + " Para corrigir mais, clique em Carregar de novo. (Ctrl+Z desfaz.)");
+    } catch (e) { msg("Erro ao " + etapa + ": " + (e && e.message ? e.message : e), true); }
+  });
+})();

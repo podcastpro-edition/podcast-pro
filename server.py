@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.26"
+VERSAO = "1.0.27"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1533,6 +1533,9 @@ class Handler(BaseHTTPRequestHandler):
                                                      os.path.join(pasta_ov, nome_ov),
                                                      bool(corpo.get("separado", False))))
 
+            if self.path == "/legenda/info_lote":
+                reg = _registro_overlay()
+                return self._responder({"infos": [reg.get(os.path.basename(str(n))) for n in corpo.get("nomes", [])]})
             if self.path == "/legenda/info":
                 info = _registro_overlay().get(os.path.basename(str(corpo.get("nome", ""))))
                 return self._responder(info or {"erro": "Não achei o texto dessa legenda. Só dá para editar legendas Criativo feitas por esta versão."}, 200 if info else 404)
