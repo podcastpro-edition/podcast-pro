@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.58"
+VERSAO = "1.0.59"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -2520,8 +2520,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._responder(excluir_estilo(corpo.get("nome", "")))
             if self.path == "/estilo/previa":
                 try:
+                    vert = corpo.get("formato") == "v"
                     renderizar_previa(corpo.get("def") or {}, corpo.get("texto") or "Seu texto aparece aqui",
-                                      os.path.join(_RAIZ, "painel", "img", "prev_editor.png"))
+                                      os.path.join(_RAIZ, "painel", "img", "prev_editor.png"),
+                                      W=720 if vert else 1280, H=1280 if vert else 720, recorte=None)
                     return self._responder({"ok": True})
                 except Exception as e:
                     return self._responder({"erro": str(e)}, 400)

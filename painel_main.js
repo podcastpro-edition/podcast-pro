@@ -2737,7 +2737,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     if (timerPrevia) clearTimeout(timerPrevia);
     timerPrevia = setTimeout(async () => {
       try {
-        await chamar("/estilo/previa", { def: paraDef() });
+        await chamar("/estilo/previa", { def: paraDef(), formato: E.formato || "h" });
         const im = $("edPrevia");
         if (im) im.src = SERVICO + "/painel/img/prev_editor.png?t=" + Date.now();
       } catch (e) { const m = $("edMsg"); if (m) m.textContent = "Prévia: " + (e && e.message ? e.message : e); }
@@ -2909,8 +2909,42 @@ $("btnTesteModelo").addEventListener("click", async () => {
     caixa.appendChild(topo);
     const prev = el("div", "ed-card");
     prev.appendChild(el("div", "ed-tit", "Prévia (como a legenda fica parada)"));
+    // formato do vídeo: horizontal ou vertical
+    const fm = el("div"); fm.style.display = "flex"; fm.style.marginBottom = "6px";
+    for (const [v, n] of [["h", "Vídeo horizontal"], ["v", "Vídeo vertical"]]) {
+      const b = el("div", "ed-btn", n); b.style.marginRight = "6px"; b.style.width = "auto"; b.style.paddingLeft = "10px"; b.style.paddingRight = "10px";
+      if ((E.formato || "h") === v) { b.style.backgroundColor = "#4a3fa0"; b.style.color = "#ffffff"; }
+      b.addEventListener("click", () => { E.formato = v; desenhar(); agendarPrevia(); });
+      fm.appendChild(b);
+    }
+    prev.appendChild(fm);
     const im = document.createElement("img"); im.id = "edPrevia"; im.className = "ed-prev";
+    if (E.formato === "v") { im.style.width = "40%"; im.style.marginLeft = "auto"; im.style.marginRight = "auto"; }
     prev.appendChild(im);
+    // setas: movem o texto inteiro (todas as linhas juntas)
+    prev.appendChild(el("div", "rt", "Mover o texto na tela (todas as linhas juntas)"));
+    prev.lastChild.style.fontSize = "12px"; prev.lastChild.style.marginTop = "8px";
+    const grade = el("div"); grade.style.width = "132px"; grade.style.marginLeft = "auto"; grade.style.marginRight = "auto"; grade.style.marginTop = "4px";
+    const mover = (dx, dy) => {
+      if (!dx && !dy) { // centro: centraliza o bloco
+        const my = E.linhas.reduce((a, l) => a + l.y, 0) / E.linhas.length, mx = E.linhas.reduce((a, l) => a + l.x, 0) / E.linhas.length;
+        dx = 50 - mx; dy = 50 - my;
+      }
+      for (const l of E.linhas) { l.x = Math.max(5, Math.min(95, Math.round(l.x + dx))); l.y = Math.max(5, Math.min(95, Math.round(l.y + dy))); }
+      desenhar(); agendarPrevia();
+    };
+    const setas = [["↖", -5, -5], ["↑", 0, -5], ["↗", 5, -5], ["←", -5, 0], ["●", 0, 0], ["→", 5, 0], ["↙", -5, 5], ["↓", 0, 5], ["↘", 5, 5]];
+    for (let r = 0; r < 3; r++) {
+      const fila = el("div"); fila.style.display = "flex";
+      for (let c = 0; c < 3; c++) {
+        const [t, dx, dy] = setas[r * 3 + c];
+        const b = el("div", "ed-btn", t); b.style.width = "40px"; b.style.marginRight = "4px"; b.style.marginBottom = "4px"; b.style.textAlign = "center"; b.style.paddingLeft = "0px"; b.style.paddingRight = "0px";
+        b.addEventListener("click", () => mover(dx, dy));
+        fila.appendChild(b);
+      }
+      grade.appendChild(fila);
+    }
+    prev.appendChild(grade);
     caixa.appendChild(prev);
 
     // linhas: clique numa para abrir as opções dela
