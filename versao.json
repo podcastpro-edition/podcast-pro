@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.25",
-  "notas": "Legendas Criativo: um clipe por legenda (editavel: mover e aparar)",
+  "versao": "1.0.26",
+  "notas": "Botao: editar texto de uma legenda Criativo",
   "arquivos": {
-    "server.py": "cbaa3a97e2bb6fa2fabd6dc4c4646124152ea59942847e543bed66bb500625d2",
-    "painel_index.html": "54313e17e09558dab6b23da149f7c00f64381b38e317a639fcf1fad673721d15",
-    "painel_main.js": "6165e24c5eb4a6dbb58fb4ead055ff041fdca0d8186b3d0ae15e0b1c2f2c2d72",
+    "server.py": "0f5e0b70fc957e069b9ef942151e78b88d98c367b4c2c631b0c33fc95b51f3c4",
+    "painel_index.html": "64176e50515d1edc3d071157f760c9d8a20efa9d2b22fba362c54159c0fa7cbb",
+    "painel_main.js": "40ae188c72f4b5ffb3d1f08838b0bd895ce6ea2007d1b387f703c41484050b22",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",

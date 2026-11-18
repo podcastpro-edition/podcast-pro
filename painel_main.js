@@ -1895,3 +1895,74 @@ $("btnTesteModelo").addEventListener("click", async () => {
     msg("Falhou em '" + etapa + "': " + (e && e.message ? e.message : e), true);
   }
 });
+
+
+// ---- Editar o texto de uma legenda Criativo (clipe selecionado na timeline) ----
+(function () {
+  const msg = (t, e) => { const m = $("msgEditLeg"); if (m) { m.textContent = t; m.style.color = e ? "#ff8a80" : "#9a9a9a"; } };
+  const nomeArq = (c) => String(c).split(/[\\/]/).pop();
+  async function selecionada() {
+    const ppro = require("premierepro");
+    const projeto = await ppro.Project.getActiveProject();
+    const seq = await projeto.getActiveSequence();
+    if (!seq) throw new Error("Abra a sequência primeiro.");
+    const sel = await seq.getSelection();
+    const itens = await sel.getTrackItems();
+    if (!itens || !itens.length) throw new Error("Clique numa legenda na timeline primeiro.");
+    const it = itens[0];
+    const pi = await it.getProjectItem();
+    const nome = pi.name;
+    const ini = (await it.getStartTime()).seconds, fim = (await it.getEndTime()).seconds;
+    let trilha = -1;
+    const nV = await seq.getVideoTrackCount();
+    for (let i = 0; i < nV && trilha < 0; i++) {
+      const lista = await (await seq.getVideoTrack(i)).getTrackItems(1, false);
+      for (const c of lista) {
+        if (Math.abs((await c.getStartTime()).seconds - ini) < 0.02 && (await (await c.getProjectItem()).name) === nome) { trilha = i; break; }
+      }
+    }
+    if (trilha < 0) throw new Error("Não achei a trilha desse clipe.");
+    return { ppro, projeto, seq, nome, ini, fim, trilha };
+  }
+  $("btnLerLeg").addEventListener("click", async () => {
+    try {
+      const s = await selecionada();
+      const info = await chamar("/legenda/info", { nome: s.nome });
+      $("txtEditLeg").value = info.texto;
+      msg("Texto carregado (" + info.estilo + "). Edite e clique em Aplicar.");
+    } catch (e) { msg(e && e.message ? e.message : String(e), true); }
+  });
+  $("btnAplicarLeg").addEventListener("click", async () => {
+    let etapa = "começar";
+    try {
+      const novo = $("txtEditLeg").value.trim();
+      if (!novo) return msg("Escreva o texto novo.", true);
+      const s = await selecionada();
+      etapa = "ler o estilo da legenda";
+      const info = await chamar("/legenda/info", { nome: s.nome });
+      etapa = "desenhar a legenda nova";
+      msg("Desenhando...");
+      let LARG = 1920, ALT = 1080;
+      try { const fs = await s.seq.getFrameSize(); if (fs && fs.width > 0) { LARG = fs.width; ALT = fs.height; } } catch (e) { /* padrão */ }
+      const ov = await chamar("/legendas_overlay", {
+        estilo: info.estilo, w: LARG, h: ALT, fps: 30, separado: true,
+        blocos: [{ a: 0, b: Math.max(0.4, s.fim - s.ini), texto: novo }],
+      });
+      etapa = "importar";
+      const raiz = await s.projeto.getRootItem();
+      const nn = nomeArq(ov.itens[0].arquivo);
+      await s.projeto.importFiles([ov.itens[0].arquivo], true, raiz, false);
+      let item = null;
+      for (let w = 0; w < 20 && !item; w++) {
+        await dormir(500);
+        item = (await raiz.getItems()).find((x) => x.name === nn) || null;
+      }
+      if (!item) throw new Error("o Premiere não importou a legenda nova");
+      etapa = "trocar na timeline";
+      const ed = await s.ppro.SequenceEditor.getEditor(s.seq);
+      const t = await s.ppro.TickTime.createWithSeconds(s.ini);
+      await executar(s.projeto, "Legenda: trocar texto", () => ed.createOverwriteItemAction(item, t, s.trilha, 0));
+      msg("Pronto: legenda trocada. (Ctrl+Z desfaz.)");
+    } catch (e) { msg("Erro ao " + etapa + ": " + (e && e.message ? e.message : e), true); }
+  });
+})();

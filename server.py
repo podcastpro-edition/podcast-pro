@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.25"
+VERSAO = "1.0.26"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1022,6 +1022,22 @@ def _quadro_legenda(sprites, W, H, t, dur):
     return quadro
 
 
+def _registro_overlay(novos=None):
+    """Guarda (num arquivo) o texto e o estilo de cada legenda desenhada, para poder editar depois."""
+    arq = os.path.join(_RAIZ, "cache", "overlays", "textos.json")
+    try:
+        with open(arq, encoding="utf-8") as f:
+            dados = json.load(f)
+    except Exception:
+        dados = {}
+    if novos:
+        dados.update(novos)
+        os.makedirs(os.path.dirname(arq), exist_ok=True)
+        with open(arq, "w", encoding="utf-8") as f:
+            json.dump(dados, f, ensure_ascii=False)
+    return dados
+
+
 def gerar_overlay(blocos, estilo, W, H, fps, saida, separado=False):
     """blocos: [(inicio, fim, texto)] em segundos (já em ordem). Gera UM vídeo .mov com transparência."""
     import tempfile
@@ -1076,6 +1092,7 @@ def gerar_overlay(blocos, estilo, W, H, fps, saida, separado=False):
             lista_sep.append({"arquivo": arq, "a": a, "b": b, "texto": tx})
         import shutil
         shutil.rmtree(pasta, ignore_errors=True)
+        _registro_overlay({os.path.basename(x["arquivo"]): {"texto": x["texto"], "estilo": estilo} for x in lista_sep})
         return {"itens": lista_sep, "legendas": len(lista_sep)}
     for i, (a, b, tx) in enumerate(ajust):
         fa = int(round((a - t0) * fps))
@@ -1516,6 +1533,9 @@ class Handler(BaseHTTPRequestHandler):
                                                      os.path.join(pasta_ov, nome_ov),
                                                      bool(corpo.get("separado", False))))
 
+            if self.path == "/legenda/info":
+                info = _registro_overlay().get(os.path.basename(str(corpo.get("nome", ""))))
+                return self._responder(info or {"erro": "Não achei o texto dessa legenda. Só dá para editar legendas Criativo feitas por esta versão."}, 200 if info else 404)
             if self.path == "/modelo/preparar":
                 try:
                     return self._responder(preparar_modelo_projeto(corpo.get("modelo", ""), corpo.get("linhas", [])))
