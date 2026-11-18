@@ -2020,7 +2020,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       for (const c of itens) {
         const nome = (await (await c.getProjectItem()).name) || "";
         if (/^leg\d+_Criativo/.test(nome)) {
-          achados.push({ nome, ini: (await c.getStartTime()).seconds, fim: (await c.getEndTime()).seconds, trilha: i });
+          achados.push({ nome, ini: (await c.getStartTime()).seconds, fim: (await c.getEndTime()).seconds, trilha: i, item: c });
         }
       }
     }
@@ -2039,8 +2039,8 @@ $("btnTesteModelo").addEventListener("click", async () => {
       tc.addEventListener("click", async () => {
         try { await ctx.seq.setPlayerPosition(await ctx.ppro.TickTime.createWithSeconds(x.ini)); } catch (e) { msg("Não consegui mover o cursor: " + (e && e.message ? e.message : e), true); }
       });
-      const tx = document.createElement("input"); tx.type = "text"; tx.className = "tx"; tx.value = x.atual; tx.disabled = !x.estilo;
-      const marcar = () => lin.classList.toggle("mudou", !!x.novo || !!x.tempoMudou || x.atual.trim() !== x.texto);
+      const tx = document.createElement("textarea"); tx.rows = 2; tx.className = "tx"; tx.value = x.atual; tx.disabled = !x.estilo || !!x.removido;
+      const marcar = () => { lin.classList.toggle("mudou", !!x.novo || !!x.tempoMudou || x.atual.trim() !== x.texto); lin.classList.toggle("removida", !!x.removido); };
       tx.addEventListener("input", () => { x.atual = tx.value; marcar(); });
       marcar();
       const mais = document.createElement("div"); mais.className = "mais"; mais.textContent = "+";
@@ -2057,7 +2057,19 @@ $("btnTesteModelo").addEventListener("click", async () => {
         if (campos[i + 1]) campos[i + 1].focus();
         msg("Nova legenda criada abaixo. Escreva o texto e clique em Aplicar.");
       });
-      lin.appendChild(tc); lin.appendChild(tx); lin.appendChild(mais); c.appendChild(lin);
+      const menos = document.createElement("div"); menos.className = "menos"; menos.textContent = x.removido ? "↺" : "−";
+      menos.title = x.removido ? "Desfazer a exclusão" : "Excluir esta legenda";
+      menos.style.visibility = x.estilo ? "visible" : "hidden";
+      menos.addEventListener("click", () => {
+        if (x.novo) {  // legenda criada agora: some e devolve o tempo para a anterior
+          const ant = lista[i - 1];
+          if (ant && Math.abs(ant.fim - x.ini) < 0.02) ant.fim = x.fim;
+          lista.splice(i, 1);
+        } else x.removido = !x.removido;
+        desenharLista();
+        msg(x.removido ? "Legenda marcada para excluir. Clique em Aplicar." : "Ok.");
+      });
+      lin.appendChild(tc); lin.appendChild(tx); lin.appendChild(mais); lin.appendChild(menos); c.appendChild(lin);
     });
   }
   async function carregar() {
@@ -2079,10 +2091,11 @@ $("btnTesteModelo").addEventListener("click", async () => {
     try {
       if (!lista.length) return msg("Clique primeiro em Carregar.", true);
       const linhas = lista.map((x) => x.atual);
-      if (lista.some((x) => x.novo && !x.atual.trim())) return msg("Escreva o texto de todas as legendas novas (linhas roxas vazias) antes de aplicar.", true);
+      if (lista.some((x) => x.novo && !x.removido && !x.atual.trim())) return msg("Escreva o texto de todas as legendas novas (linhas roxas vazias) antes de aplicar.", true);
       const mudadas = [];
-      lista.forEach((x, i) => { const n = x.atual.trim(); if (x.estilo && n && (x.novo || x.tempoMudou || n !== x.texto)) mudadas.push(i); });
-      if (!mudadas.length) return msg("Nenhuma linha foi alterada.");
+      lista.forEach((x, i) => { const n = x.atual.trim(); if (x.estilo && !x.removido && n && (x.novo || x.tempoMudou || n !== x.texto)) mudadas.push(i); });
+      const removidas = lista.filter((x) => x.removido && !x.novo);
+      if (!mudadas.length && !removidas.length) return msg("Nenhuma linha foi alterada.");
       etapa = "desenhar as legendas";
       msg("Desenhando " + mudadas.length + " legenda(s)...");
       const s = await lerTodas();
@@ -2127,10 +2140,22 @@ $("btnTesteModelo").addEventListener("click", async () => {
         if (feitas % 5 === 0) msg("Trocando as legendas: " + feitas + " de " + novos.size + "...");
       }
       // atualiza a lista com os novos nomes/textos: peça para carregar de novo
+      let excluidas = 0;
+      if (removidas.length) {
+        etapa = "excluir as legendas marcadas";
+        try {
+          const sel = await s.seq.createEmptySelection();
+          for (const r of removidas) {
+            const alvo = mapa.get(r.nome + "@" + r.ini.toFixed(2));
+            if (alvo && alvo.item) { await sel.addItem(alvo.item, true); excluidas++; }
+          }
+          await executar(s.projeto, "Legenda: excluir", () => ed.createRemoveItemsAction(sel, false, s.ppro.Constants.MediaType.VIDEO));
+        } catch (e) { falhas.push("exclusão: " + (e && e.message ? e.message : e) + " (apague na timeline com a tecla Delete)"); excluidas = 0; }
+      }
       await dormir(1500);
       let aviso = "";
       try { await carregar(); } catch (e) { aviso = " (não consegui recarregar a lista: clique em Todas as legendas)"; }
-      msg("Pronto: " + feitas + " legenda(s) corrigida(s)." + (falhas.length ? " Não trocadas (linhas): " + falhas.join(", ") + " (o clipe foi movido; carregue de novo)." : "") + " A lista foi recarregada. (Ctrl+Z desfaz.)" + aviso);
+      msg("Pronto: " + feitas + " legenda(s) corrigida(s)" + (excluidas ? ", " + excluidas + " excluída(s)" : "") + "." + (falhas.length ? " Não trocadas (linhas): " + falhas.join(", ") + " (o clipe foi movido; carregue de novo)." : "") + " A lista foi recarregada. (Ctrl+Z desfaz.)" + aviso);
     } catch (e) { msg("Erro ao " + etapa + ": " + (e && e.message ? e.message : e), true); }
   });
 })();
