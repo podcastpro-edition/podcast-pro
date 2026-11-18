@@ -3010,11 +3010,10 @@ $("btnTesteModelo").addEventListener("click", async () => {
       it.style.display = "flex"; it.style.alignItems = "center";
       const tx = el("div", "", (marcada ? "✓ " : "") + "Linha " + (i + 1) + "   ·   " + nf + "   ·   " + l.tam + "%"); tx.style.flex = "1";
       it.appendChild(tx);
-      const alca = el("div", "", "≡"); alca.style.width = "30px"; alca.style.height = "24px"; alca.style.lineHeight = "24px"; alca.style.textAlign = "center"; alca.style.fontSize = "20px"; alca.style.marginLeft = "4px"; alca.style.borderRadius = "6px"; alca.style.backgroundColor = "#444458"; alca.style.color = "#ffffff"; alca.style.cursor = "grab";
+      const alca = el("div", "", "≡"); alca.style.width = "24px"; alca.style.height = "24px"; alca.style.lineHeight = "24px"; alca.style.textAlign = "center"; alca.style.fontSize = "20px"; alca.style.color = "#8a8a9c"; alca.style.cursor = "grab"; alca.style.flexShrink = "0";
       alca.addEventListener("mousedown", (ev) => { ev.stopPropagation(); ev.preventDefault(); iniciarArraste(i); });
-      const abre = el("div", "", "▾"); abre.style.width = "30px"; abre.style.height = "24px"; abre.style.lineHeight = "24px"; abre.style.textAlign = "center"; abre.style.marginLeft = "4px"; abre.style.borderRadius = "6px"; abre.style.backgroundColor = i === E.sel ? "#6a58e0" : "#444458"; abre.style.color = "#ffffff";
+      const abre = el("div", "", "▾"); abre.style.width = "26px"; abre.style.height = "24px"; abre.style.lineHeight = "24px"; abre.style.textAlign = "center"; abre.style.marginLeft = "4px"; abre.style.color = i === E.sel ? "#b9acff" : "#8a8a9c"; abre.style.fontSize = "15px";
       abre.addEventListener("click", (ev) => { ev.stopPropagation(); E.sel = (E.sel === i) ? -1 : i; desenhar(); agendarPrevia(); });
-      it.appendChild(alca);
       it.appendChild(abre);
       itens.push(it);
       it.addEventListener("click", () => { // clicar na linha marca/desmarca (as setas movem as marcadas)
@@ -3022,7 +3021,9 @@ $("btnTesteModelo").addEventListener("click", async () => {
         E.marc = k >= 0 ? m.filter((v) => v !== i) : m.concat([i]);
         desenhar();
       });
-      cl.appendChild(it);
+      const faixa = el("div"); faixa.style.display = "flex"; faixa.style.alignItems = "center";
+      faixa.appendChild(alca); it.style.flex = "1"; faixa.appendChild(it);
+      cl.appendChild(faixa);
       if (i === E.sel) cl.appendChild(opcoesLinha(l, i));
     });
     if (E.linhas.length < 5) {
