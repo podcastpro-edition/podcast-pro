@@ -3184,9 +3184,10 @@ $("btnTesteModelo").addEventListener("click", async () => {
     anim: { entrada: "subir", duracao: 0.35, atraso: 0.12, saida: "fade", inicio: 0.5 },
     area: { x: 50, y: 50, larg: 80, alt: 50 }, pag: { ativo: false, linhas: 3 }, tempos: [],
     formato: "h", guias: false, abertoT: -1, animAberta: false, io: null,
+    sec: { trecho: true, imagem: true, previa: true, textos: true, anim: false },
   });
   const salvarC = () => { try { localStorage.setItem("ppCriativo", JSON.stringify(Object.assign({}, C, { io: null }))); } catch (e) { /* sem armazenamento */ } };
-  const carregarC = () => { try { const j = JSON.parse(localStorage.getItem("ppCriativo") || "null"); if (j && j.fundo && j.textos && j.textos.length) return Object.assign(padraoC(), j, { io: null }); } catch (e) { /* ignora */ } return padraoC(); };
+  const carregarC = () => { try { const j = JSON.parse(localStorage.getItem("ppCriativo") || "null"); if (j && j.fundo && j.textos && j.textos.length) return Object.assign(padraoC(), j, { io: null, sec: Object.assign(padraoC().sec, j.sec || {}) }); } catch (e) { /* ignora */ } return padraoC(); };
 
   function linhaParaDefC(l) {
     const o = { f: l.f, tam: l.tam / 100, y: l.y / 100, x: l.x / 100, cor: hex2rgb(l.cor) || [255, 255, 255], caixa: l.caixa, rot: 0 };
@@ -3232,13 +3233,27 @@ $("btnTesteModelo").addEventListener("click", async () => {
     volta(); setTimeout(volta, 60); setTimeout(volta, 350);
   }
 
+  // caixa que abre/fecha ao clicar no título (fechada: o conteúdo vai para uma caixa solta, que não aparece)
+  const secao = (chave, titulo) => {
+    const aberta = C.sec[chave] !== false;
+    const card = el("div", "ed-card");
+    const cab = el("div"); cab.style.display = "flex"; cab.style.alignItems = "center"; cab.style.cursor = "pointer";
+    cab.style.padding = "9px 10px"; cab.style.borderRadius = "8px"; cab.style.backgroundColor = "#2d2d46"; cab.style.marginBottom = aberta ? "6px" : "0";
+    const tt = el("div", "", titulo); tt.style.flex = "1"; tt.style.fontSize = "15px"; tt.style.fontWeight = "700"; tt.style.color = "#ffffff";
+    const sa = el("div", "", "▾"); sa.style.fontSize = "16px"; sa.style.color = aberta ? "#b9acff" : "#8a8a9c";
+    cab.appendChild(tt); cab.appendChild(sa);
+    cab.addEventListener("click", () => { C.sec[chave] = !aberta; salvarC(); desenharC(); });
+    card.appendChild(cab);
+    caixaC.appendChild(card);
+    return aberta ? card : el("div");
+  };
   const cartao = (titulo) => { const c = el("div", "ed-card"); c.appendChild(el("div", "ed-tit", titulo)); return c; };
   const miniBtn = (txt, fn, cls) => { const b = el("div", "ed-btn" + (cls ? " " + cls : ""), txt); b.style.width = "auto"; b.style.paddingLeft = "10px"; b.style.paddingRight = "10px"; b.addEventListener("click", fn); return b; };
 
   function desenharCInterno() {
     caixaC.innerHTML = "";
     // ---- 1. trecho IN/OUT + fala
-    const t1 = cartao("1. Trecho na sequência (IN/OUT)");
+    const t1 = secao("trecho", "1. Trecho na sequência (IN/OUT)");
     const info = el("div", "rt", C.io ? "Trecho marcado: " + fmtT(C.io.ini) + " até " + fmtT(C.io.fim) + "  (" + (C.io.fim - C.io.ini).toFixed(1).replace(".", ",") + " s)" : "Na timeline: cursor no começo e tecla I; cursor no fim e tecla O. Depois clique em Ler IN/OUT.");
     info.style.fontSize = "12px"; info.style.marginBottom = "4px"; t1.appendChild(info);
     const lin1 = el("div"); lin1.style.display = "flex";
@@ -3246,10 +3261,9 @@ $("btnTesteModelo").addEventListener("click", async () => {
     bLer.style.marginRight = "6px"; lin1.appendChild(bLer);
     lin1.appendChild(miniBtn("✍ Escrever o que foi dito", () => semPressa(escreverFalaC), "verde"));
     t1.appendChild(lin1);
-    caixaC.appendChild(t1);
 
     // ---- 2. imagem de fundo
-    const t2 = cartao("2. Imagem de fundo");
+    const t2 = secao("imagem", "2. Imagem de fundo");
     const lin2 = el("div"); lin2.style.display = "flex"; lin2.style.alignItems = "center";
     const bImg = miniBtn(C.imagem ? "Trocar imagem" : "Escolher imagem", escolherImagemC);
     bImg.style.marginRight = "8px"; lin2.appendChild(bImg);
@@ -3262,10 +3276,9 @@ $("btnTesteModelo").addEventListener("click", async () => {
     t2.appendChild(linha("Animação de entrada da imagem", selecionar(ENTR_IMG, C.fundo.entrada, (v) => { C.fundo.entrada = v; agendarPreviaC(); }, "190px")));
     t2.appendChild(linha("Duração da entrada (s)", stepper(C.fundo, "duracao", 0.1, 2, 0.1, " s", 1)));
     t2.appendChild(linha("Sumir suave no final", bolinha(C.fundo.saida, (on) => { C.fundo.saida = on; agendarPreviaC(); })));
-    caixaC.appendChild(t2);
 
     // ---- prévia
-    const tp = cartao("Prévia (como o criativo fica parado)");
+    const tp = secao("previa", "Prévia (como o criativo fica parado)");
     const fm = el("div"); fm.style.display = "flex"; fm.style.marginBottom = "6px";
     for (const [v, n] of [["h", "Vídeo horizontal"], ["v", "Vídeo vertical"]]) {
       const b = el("div", "ed-btn", n); b.style.marginRight = "6px"; b.style.width = "auto"; b.style.paddingLeft = "10px"; b.style.paddingRight = "10px";
@@ -3284,10 +3297,9 @@ $("btnTesteModelo").addEventListener("click", async () => {
     if (LARG_C) im.style.minHeight = Math.round(LARG_C * (vert ? 0.4 * 16 / 9 : 9 / 16)) + "px";
     if (ULTIMA_C) im.src = ULTIMA_C;
     mold.appendChild(im); tp.appendChild(mold);
-    caixaC.appendChild(tp);
 
     // ---- 3. textos
-    const t3 = cartao("3. Textos");
+    const t3 = secao("textos", "3. Textos");
     C.textos.forEach((t, i) => {
       const cab = el("div"); cab.style.display = "flex"; cab.style.alignItems = "center"; cab.style.marginTop = "6px";
       const nome = el("div", "rt", t.titulo); nome.style.flex = "1"; nome.style.fontSize = "12px"; cab.appendChild(nome);
@@ -3311,24 +3323,16 @@ $("btnTesteModelo").addEventListener("click", async () => {
       } else t3.appendChild(linha("Largura do texto na tela", stepper(t, "larg", 30, 90, 5, "%")));
       if (C.abertoT === i) t3.appendChild(opcoesLinha(t.linha, i, true, i === 0));
     });
-    caixaC.appendChild(t3);
 
     // ---- animação do texto
-    const t4 = el("div", "ed-card");
-    const cab = el("div", "ed-tit"); cab.style.display = "flex"; cab.style.alignItems = "center"; cab.style.cursor = "pointer"; cab.style.margin = "0";
-    const tt = el("div", "", "Animação do texto"); tt.style.flex = "1";
-    const sa = el("div", "", "▾"); sa.style.color = C.animAberta ? "#b9acff" : "#8a8a9c"; sa.style.paddingRight = "6px";
-    cab.appendChild(tt); cab.appendChild(sa);
-    cab.addEventListener("click", () => { C.animAberta = !C.animAberta; desenharC(); agendarPreviaC(); });
-    t4.appendChild(cab);
-    if (C.animAberta) {
+    const t4 = secao("anim", "Animação do texto");
+    {
       t4.appendChild(selecionar(ANIMS, C.anim.entrada, (v) => { C.anim.entrada = v; agendarPreviaC(); }));
       t4.appendChild(linha("Velocidade da entrada (s)", stepper(C.anim, "duracao", 0.1, 1.2, 0.05, " s", 2)));
       t4.appendChild(linha("Atraso entre linhas (s)", stepper(C.anim, "atraso", 0, 0.4, 0.02, " s", 2)));
       t4.appendChild(linha("Texto começa depois de (s)", stepper(C.anim, "inicio", 0, 3, 0.1, " s", 1)));
       t4.appendChild(linha("Saída suave (some devagar)", bolinha(C.anim.saida !== "nenhuma", (on) => { C.anim.saida = on ? "fade" : "nenhuma"; agendarPreviaC(); })));
     }
-    caixaC.appendChild(t4);
 
     const criar = el("div", "ed-btn verde", "🎬 Criar criativo no trecho IN/OUT");
     criar.style.padding = "14px"; criar.style.fontSize = "15px";
@@ -3337,6 +3341,11 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const m = el("div", "dica"); m.id = "crMsg"; caixaC.appendChild(m);
   }
 
+  function subirAoTopo() { // para a pessoa ver a barra de carregamento e as mensagens
+    try { window.scrollTo(0, 0); } catch (e) { /* segue */ }
+    try { document.documentElement.scrollTop = 0; document.body.scrollTop = 0; } catch (e) { /* segue */ }
+    setTimeout(() => { try { window.scrollTo(0, 0); } catch (e) { /* segue */ } }, 80);
+  }
   async function escolherImagemC() {
     try {
       const fs = require("uxp").storage.localFileSystem;
@@ -3371,6 +3380,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
   }
 
   async function escreverFalaC() {
+    subirAoTopo();
     try {
       const r = await lerInOutC(true);
       if (!r) { desenharC(); return; }
@@ -3420,6 +3430,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
 
   async function criarCriativoC() {
     let etapa = "ler o trecho";
+    subirAoTopo();
     try {
       const r = await lerInOutC(true);
       if (!r) { desenharC(); return; }
