@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.39",
-  "notas": "Aba Podcast: cores, titulos e espacamento",
+  "versao": "1.0.40",
+  "notas": "Montar podcast completo: sincroniza, corta e oferece refinar",
   "arquivos": {
-    "server.py": "742067b4c22d52a966539adb6b7c31a16c1640c48ff16b47e7d5bb42fa7a3997",
-    "painel_index.html": "35f854128d59d9aa3b3701208d0deea0b0ea5abd0d9bb2ae62c74edc7029613b",
-    "painel_main.js": "91a1de4d8d675dbea6cda7ae65e267dc6b397ac3f622136254262d85486417ae",
+    "server.py": "bc0f0ac084833fa6c1a8ce7cba01230f1465c05278920ae3d914da7be673da92",
+    "painel_index.html": "116987e910d3f0d305d5330dec15a3b5f63081fd5eb1922ed4e2fb145ca8bca4",
+    "painel_main.js": "8096483c1499fab3837873464459e77d970e701bb17a46a167c9824688106325",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",

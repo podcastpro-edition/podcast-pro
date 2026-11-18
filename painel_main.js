@@ -903,12 +903,80 @@ async function montarPodcast(limite, opcoes = {}) {
       totalPecas + " peças de vídeo (3 câmeras), " + keeps.length + " trecho(s) de áudio, " + (await fimSeq()).toFixed(1) + " s (áudio original: " + plano.duracao.toFixed(1) + " s; com imagem em todas as câmeras de " + plano.faixaComImagem[0].toFixed(1) + " a " + plano.faixaComImagem[1].toFixed(1) + " s).\n" +
       "Atraso das câmeras: " + atrasos + "\nTrilhas silenciadas: " + silenciadas + falhaMute +
       (avisos.length ? "\nAVISOS:\n- " + avisos.join("\n- ") : "\nSem avisos.") + "\n" + linhas.join("\n"));
+    return true;
   } catch (e) {
     mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
   }
 }
 
-$("btnPodcastTudo").addEventListener("click", () => semPressa(() => montarPodcast(Infinity)));
+// ---- Pop-up simples dentro do painel (aparece no topo da aba Podcast) ----
+function popup(titulo, texto, botoes) {
+  $("popTitulo").textContent = titulo;
+  $("popTexto").textContent = texto;
+  const area = $("popBotoes");
+  while (area.firstChild) area.removeChild(area.firstChild);
+  for (const b of botoes) {
+    const d = document.createElement("div");
+    d.className = "pb " + (b.cor || "");
+    d.textContent = b.rotulo;
+    d.addEventListener("click", () => { $("popup").style.display = "none"; if (b.acao) b.acao(); });
+    area.appendChild(d);
+  }
+  $("popup").style.display = "block";
+  try { window.scrollTo(0, 0); } catch (e) { /* segue */ }
+}
+
+function abrirParticipantes() {
+  $("corpoPartic").style.display = "block";
+  $("setaPartic").textContent = "▾";
+  try { $("menuPartic").scrollIntoView(); } catch (e) { /* segue */ }
+}
+
+// Botão "Montar podcast completo": 1) sincroniza, 2) corta as câmeras, 3) oferece refinar.
+async function fluxoPodcastCompleto() {
+  let etapa = "começando";
+  try {
+    const ppro = require("premierepro");
+    const projeto = await ppro.Project.getActiveProject();
+    const origem = await projeto.getActiveSequence();
+    if (!origem) return popup("Nenhuma sequência aberta", "Abra a sequência com as câmeras e o áudio dos microfones e clique de novo.", [{ rotulo: "Entendi" }]);
+
+    // sem câmeras para cortar? avisa antes de gastar tempo
+    etapa = "conferir as câmeras";
+    const cams = camerasUsadas();
+    if (cams.length < 2) {
+      return popup("Não há câmeras para cortar",
+        "Só uma câmera foi escolhida (" + cams.join(", ") + "), então não existe troca de câmera a fazer. Em \"Selecionar participantes e apresentador\", escolha um vídeo diferente para cada pessoa.",
+        [{ rotulo: "Abrir participantes e apresentador", cor: "azul", acao: abrirParticipantes }, { rotulo: "Fechar" }]);
+    }
+
+    // PASSO 1: sincronia
+    etapa = "conferir a sincronia";
+    mostrar("Passo 1 de 2: conferindo a sincronia das câmeras com o áudio...\n(uns 20 segundos; não mexa no Premiere)");
+    const wav = await wavDoPodcast(ppro, origem);
+    const caminhos = [];
+    for (const v of cams) caminhos.push(await caminhoDaTrilha(ppro, origem, "V", parseInt(v.slice(1), 10) - 1));
+    const sync = await chamar("/sync", { path: wav, outros: caminhos });
+    const desvios = sync.resultados.map((r) => Math.abs(r.deslocamento));
+    const jaSincronizado = desvios.every((d) => d < 0.05);
+    const resumoSync = jaSincronizado
+      ? "Os materiais já estavam sincronizados; fui direto para os cortes."
+      : "Sincronia ajustada na sequência nova (atrasos: " + sync.resultados.map((r, i) => cams[i] + " " + r.deslocamento.toFixed(2) + " s").join(", ") + ").";
+
+    // PASSO 2: cortes automáticos de câmera (já considera a sincronia)
+    etapa = "cortar as câmeras";
+    mostrar(resumoSync + "\nPasso 2 de 2: cortando as câmeras automaticamente...");
+    const ok = await montarPodcast(Infinity);
+    if (!ok) return;
+
+    popup("Cortes prontos",
+      resumoSync + " Os cortes foram feitos automaticamente. Quer refinar mais? Em \"Selecionar participantes e apresentador\" você muda quem é apresentador e quanto a imagem dele é priorizada; depois clique em \"Montar podcast completo\" de novo.",
+      [{ rotulo: "Refinar cortes", cor: "azul", acao: abrirParticipantes }, { rotulo: "Está bom assim", cor: "verde" }]);
+  } catch (e) {
+    mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
+  }
+}
+$("btnPodcastTudo").addEventListener("click", () => semPressa(fluxoPodcastCompleto));
 
 // --- Legendas do podcast: transcrição por palavra (só os microfones) ---------
 $("btnLegendasPodcast").addEventListener("click", () => semPressa(async () => {
