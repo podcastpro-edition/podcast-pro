@@ -2749,19 +2749,37 @@ $("btnTesteModelo").addEventListener("click", async () => {
   // controle numérico: barra de rolagem + caixinha com o número (dá para arrastar ou digitar)
   function stepper(obj, chave, min, max, passo, sufixo, casas) {
     const w = el("div", "stp");
-    const barra = document.createElement("input");
-    barra.type = "range"; barra.min = String(min); barra.max = String(max); barra.step = String(passo); barra.value = String(obj[chave]);
-    barra.style.width = "120px";
+    // barra própria (o controle nativo do Premiere pula para as pontas)
+    const barra = el("div"); barra.style.width = "120px"; barra.style.height = "20px"; barra.style.position = "relative"; barra.style.flexShrink = "0";
+    const trilho = el("div"); trilho.style.position = "absolute"; trilho.style.left = "0px"; trilho.style.right = "0px"; trilho.style.top = "9px"; trilho.style.height = "3px"; trilho.style.backgroundColor = "#555566"; trilho.style.borderRadius = "2px";
+    const preench = el("div"); preench.style.position = "absolute"; preench.style.left = "0px"; preench.style.top = "9px"; preench.style.height = "3px"; preench.style.backgroundColor = "#7b61ff"; preench.style.borderRadius = "2px";
+    const bola = el("div"); bola.style.position = "absolute"; bola.style.top = "3px"; bola.style.width = "14px"; bola.style.height = "14px"; bola.style.borderRadius = "7px"; bola.style.backgroundColor = "#e6e6f0";
+    barra.appendChild(trilho); barra.appendChild(preench); barra.appendChild(bola);
+    const posicionar = (v) => {
+      const f = max > min ? (v - min) / (max - min) : 0;
+      const x = Math.max(0, Math.min(1, f)) * 106;
+      bola.style.left = x + "px"; preench.style.width = (x + 7) + "px";
+    };
+    posicionar(obj[chave]);
     const caixaNum = document.createElement("input");
     caixaNum.type = "text"; caixaNum.style.width = "52px"; caixaNum.style.marginLeft = "6px"; caixaNum.style.textAlign = "center";
     const fmt = (v) => Number(v).toFixed(casas || 0).replace(".", ",");
     caixaNum.value = fmt(obj[chave]);
     const aplicar = (v) => { obj[chave] = Math.max(min, Math.min(max, Math.round(v * 1000) / 1000)); agendarPrevia(); };
-    barra.addEventListener("input", () => { aplicar(parseFloat(barra.value)); caixaNum.value = fmt(obj[chave]); });
-    barra.addEventListener("change", () => { aplicar(parseFloat(barra.value)); caixaNum.value = fmt(obj[chave]); });
+    const doMouse = (ev) => {
+      const r = barra.getBoundingClientRect();
+      const f = Math.max(0, Math.min(1, (ev.clientX - r.left - 7) / Math.max(1, r.width - 14)));
+      let v = min + f * (max - min);
+      v = Math.round(v / passo) * passo;
+      aplicar(v); caixaNum.value = fmt(obj[chave]); posicionar(obj[chave]);
+    };
+    let arrastando = false;
+    barra.addEventListener("mousedown", (ev) => { arrastando = true; doMouse(ev); });
+    document.addEventListener("mousemove", (ev) => { if (arrastando) doMouse(ev); });
+    document.addEventListener("mouseup", () => { arrastando = false; });
     caixaNum.addEventListener("change", () => {
       const v = parseFloat(String(caixaNum.value).replace(",", "."));
-      if (isFinite(v)) { aplicar(v); barra.value = String(obj[chave]); }
+      if (isFinite(v)) { aplicar(v); posicionar(obj[chave]); }
       caixaNum.value = fmt(obj[chave]);
     });
     w.appendChild(barra); w.appendChild(caixaNum);
@@ -2874,6 +2892,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
 
   function desenhar() {
     if (E.sel === undefined || E.sel >= E.linhas.length) E.sel = 0;
+    if (E.sel < -1) E.sel = -1;
     caixa.innerHTML = "";
     const topo = el("div", "ed-card");
     topo.appendChild(el("div", "ed-tit", "Começar de um estilo existente"));
@@ -2900,7 +2919,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     E.linhas.forEach((l, i) => {
       const nf = (fontes.find((f) => f.id === l.f) || { nome: l.f }).nome;
       const it = el("div", "ed-item" + (i === E.sel ? " sel" : ""), "Linha " + (i + 1) + "   ·   " + nf + "   ·   " + l.tam + "%");
-      it.addEventListener("click", () => { E.sel = i; desenhar(); agendarPrevia(); });
+      it.addEventListener("click", () => { E.sel = (E.sel === i) ? -1 : i; desenhar(); agendarPrevia(); });
       cl.appendChild(it);
       if (i === E.sel) cl.appendChild(opcoesLinha(l, i));
     });
