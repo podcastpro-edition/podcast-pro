@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.66"
+VERSAO = "1.0.67"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1852,6 +1852,33 @@ def _quadro_legenda(sprites, W, H, t, dur, anim=None):
     return quadro
 
 
+def cor_da_tela():
+    """Conta-gotas: cor do pixel sob o mouse (qualquer janela, no Windows) e se o botão esquerdo/Esc estão apertados."""
+    if os.name != "nt":
+        raise RuntimeError("O conta-gotas só funciona no Windows.")
+    import ctypes
+    from ctypes import wintypes
+    u, g = ctypes.windll.user32, ctypes.windll.gdi32
+    try:
+        u.SetProcessDPIAware()
+    except Exception:
+        pass
+    u.GetDC.restype = wintypes.HDC
+    u.GetDC.argtypes = [wintypes.HWND]
+    u.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+    g.GetPixel.restype = wintypes.DWORD
+    g.GetPixel.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int]
+    pt = wintypes.POINT()
+    u.GetCursorPos(ctypes.byref(pt))
+    hdc = u.GetDC(None)
+    c = g.GetPixel(hdc, pt.x, pt.y)
+    u.ReleaseDC(None, hdc)
+    if c == 0xFFFFFFFF:
+        c = 0
+    cor = "#%02X%02X%02X" % (c & 255, (c >> 8) & 255, (c >> 16) & 255)
+    return {"cor": cor, "clicando": bool(u.GetAsyncKeyState(1) & 0x8000), "esc": bool(u.GetAsyncKeyState(0x1B) & 0x8000)}
+
+
 def renderizar_previa(defn, texto, saida_png, W=1280, H=720, recorte=(640, 300), guias=False):
     """Desenha o estilo parado (como fica no meio da legenda) sobre um fundo escuro e salva um PNG."""
     from PIL import Image
@@ -2536,6 +2563,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self._responder({"erro": str(e)}, 400)
             if self.path == "/estilo/excluir":
                 return self._responder(excluir_estilo(corpo.get("nome", "")))
+            if self.path == "/cor_tela":
+                try:
+                    return self._responder(cor_da_tela())
+                except Exception as e:
+                    return self._responder({"erro": str(e)}, 400)
             if self.path == "/estilo/previa":
                 try:
                     vert = corpo.get("formato") == "v"

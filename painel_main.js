@@ -2696,7 +2696,8 @@ $("btnTesteModelo").addEventListener("click", async () => {
   const botao = $("btnCriarEstilo"), caixa = $("criador"), sel = $("estEstilo");
   if (!botao || !caixa) return;
   window.ppEstilosImg = window.ppEstilosImg || new Set();
-  const CORES = ["#FFFFFF", "#FFD700", "#FF28C8", "#B09CFF", "#00E5FF", "#7CFF6B", "#FF5A36", "#000000"];
+  const CORES = ["#FFFFFF", "#E0E0E0", "#9E9E9E", "#555555", "#000000", "#FFD700", "#FFB000", "#FF8A00", "#FF5A36", "#FF1744", "#B71C1C", "#FF28C8",
+    "#E040FB", "#B09CFF", "#7C4DFF", "#3D5AFE", "#2979FF", "#00B0FF", "#00E5FF", "#1DE9B6", "#7CFF6B", "#C6FF00", "#00C853", "#795548"];
   const ANIMS = [["pop", "Pulo (aparece crescendo)"], ["fade", "Surgir suave"], ["subir", "Subir"], ["descer", "Descer"],
                  ["zoom", "Zoom (de perto para o normal)"], ["quicar", "Quicar"], ["digitar", "Digitar (letra por letra)"], ["nenhuma", "Sem animação"]];
   let fontes = [], estilos = [], E = null, timerPrevia = null, aberto = false;
@@ -2801,27 +2802,60 @@ $("btnTesteModelo").addEventListener("click", async () => {
     return w;
   }
   function linha(rotulo, controle) { const r = el("div", "ed-lin"); r.appendChild(el("div", "rt", rotulo)); r.appendChild(controle); return r; }
+  // botão redondo liga/desliga: círculo com uma bolinha dentro quando está ligado
+  function bolinha(ligado, aoClicar) {
+    const c = el("div"); c.style.width = "22px"; c.style.height = "22px"; c.style.borderRadius = "11px"; c.style.display = "flex"; c.style.alignItems = "center"; c.style.justifyContent = "center"; c.style.cursor = "pointer"; c.style.marginRight = "6px";
+    const pintar = (on) => { c.style.border = "2px solid " + (on ? "#7b61ff" : "#8a8a9c"); c.innerHTML = ""; if (on) { const d = el("div"); d.style.width = "10px"; d.style.height = "10px"; d.style.borderRadius = "5px"; d.style.backgroundColor = "#7b61ff"; c.appendChild(d); } };
+    let on = !!ligado; pintar(on);
+    c.addEventListener("click", () => { on = !on; pintar(on); aoClicar(on); });
+    return c;
+  }
   function simNao(obj, chave, aoMudar) {
-    const s = document.createElement("select");
-    s.style.width = "110px";
-    for (const [v, n] of [["0", "Não"], ["1", "Sim"]]) { const o = document.createElement("option"); o.value = v; o.textContent = n; s.appendChild(o); }
-    s.value = obj[chave] ? "1" : "0";
-    s.addEventListener("change", () => { obj[chave] = s.value === "1"; if (aoMudar) aoMudar(); agendarPrevia(); });
-    return s;
+    return bolinha(obj[chave], (on) => { obj[chave] = on; if (aoMudar) aoMudar(); agendarPrevia(); });
   }
   function campoCor(obj, chave) {
     const w = el("div");
+    const topo = el("div"); topo.style.display = "flex"; topo.style.alignItems = "center";
     const i = document.createElement("input"); i.type = "text"; i.value = obj[chave]; i.style.width = "100px";
-    i.addEventListener("change", () => { if (hex2rgb(i.value)) { obj[chave] = "#" + i.value.replace("#", "").toUpperCase(); i.value = obj[chave]; agendarPrevia(); } else i.value = obj[chave]; });
-    const sw = el("div", "sws");
-    for (const c of CORES) {
-      const q = el("div", "sw"); q.style.backgroundColor = c;
-      q.addEventListener("click", () => { obj[chave] = c; i.value = c; agendarPrevia(); });
-      sw.appendChild(q);
+    const aplicarCor = (c) => { obj[chave] = c; i.value = c; amostra.style.backgroundColor = c; agendarPrevia(); };
+    const amostra = el("div"); amostra.style.width = "26px"; amostra.style.height = "26px"; amostra.style.borderRadius = "13px"; amostra.style.border = "1px solid #77778a"; amostra.style.marginLeft = "8px"; amostra.style.backgroundColor = obj[chave];
+    i.addEventListener("change", () => { if (hex2rgb(i.value)) aplicarCor("#" + i.value.replace("#", "").toUpperCase()); else i.value = obj[chave]; });
+    // conta-gotas: pega a cor de qualquer lugar da tela (clique na cor desejada; Esc cancela)
+    const gota = el("div", "ed-btn", "Conta-gotas"); gota.style.margin = "0 0 0 8px"; gota.style.padding = "5px 10px"; gota.style.fontSize = "12px";
+    let ativo = null;
+    const parar = (textoFinal) => { if (ativo) { clearInterval(ativo.t); ativo = null; } gota.textContent = "Conta-gotas"; };
+    gota.addEventListener("click", () => {
+      if (ativo) { parar(); i.value = obj[chave]; amostra.style.backgroundColor = obj[chave]; return; }
+      gota.textContent = "Clique na cor... (Esc cancela)";
+      const est = { viuSolto: false, ocupado: false, inicio: Date.now(), t: null };
+      ativo = est;
+      est.t = setInterval(async () => {
+        if (est.ocupado) return; est.ocupado = true;
+        try {
+          const r = await chamar("/cor_tela", {});
+          if (ativo !== est) return;
+          amostra.style.backgroundColor = r.cor; i.value = r.cor;
+          if (r.esc || Date.now() - est.inicio > 60000) { parar(); i.value = obj[chave]; amostra.style.backgroundColor = obj[chave]; }
+          else if (!r.clicando) est.viuSolto = true;
+          else if (est.viuSolto) { parar(); aplicarCor(r.cor); }
+        } catch (e) { parar(); i.value = obj[chave]; const m = $("edMsg"); if (m) m.textContent = "Conta-gotas: " + (e && e.message ? e.message : e); }
+        est.ocupado = false;
+      }, 90);
+    });
+    topo.appendChild(i); topo.appendChild(amostra); topo.appendChild(gota);
+    w.appendChild(topo);
+    for (let r = 0; r < CORES.length; r += 12) { // duas fileiras de 12 cores
+      const sw = el("div", "sws");
+      CORES.slice(r, r + 12).forEach((c) => {
+        const q = el("div", "sw"); q.style.backgroundColor = c;
+        q.addEventListener("click", () => aplicarCor(c));
+        sw.appendChild(q);
+      });
+      w.appendChild(sw);
     }
-    w.appendChild(i); w.appendChild(sw);
     return w;
   }
+
   function selecionar(opcoes, valor, aoMudar, largura) {
     const s = document.createElement("select");
     if (largura) s.style.width = largura;
@@ -3051,11 +3085,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const msg = el("div", "dica"); msg.id = "edMsg"; caixa.appendChild(msg);
   }
   function simNaoSaida(o) {
-    const s = document.createElement("select"); s.style.width = "110px";
-    for (const [v, n] of [["1", "Sim"], ["0", "Não"]]) { const op = document.createElement("option"); op.value = v; op.textContent = n; s.appendChild(op); }
-    s.value = o.v ? "1" : "0";
-    s.addEventListener("change", () => { E.anim.saida = s.value === "1" ? "fade" : "nenhuma"; agendarPrevia(); });
-    return s;
+    return bolinha(o.v, (on) => { E.anim.saida = on ? "fade" : "nenhuma"; agendarPrevia(); });
   }
   const mensagem = (t, erro) => { const m = $("edMsg"); if (m) { m.textContent = t; m.style.color = erro ? "#ff8a80" : "#9a9a9a"; } };
 
