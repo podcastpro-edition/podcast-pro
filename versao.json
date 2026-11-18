@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.59",
-  "notas": "Criador de estilos: previa horizontal/vertical e setas para mover o texto",
+  "versao": "1.0.60",
+  "notas": "Criador de estilos: setas dentro da previa (movem a linha aberta) e guias de video",
   "arquivos": {
-    "server.py": "cb0b2de9640c1de7f1f1a1469b515da37d165e80fbfa6192163807620639fc07",
+    "server.py": "f3014eaac5be433c1677d2fb99eeaf051f89ce009ba391536125c5f87786c74d",
     "painel_index.html": "d88ff3c23f5208a3e765b0ea277c1d3dce655f5b70439c80fd7f0b9479bf540e",
-    "painel_main.js": "44b75d4a4f819f7652db77958a553043d14260e49b64b8edc0e5b4a28df466a8",
+    "painel_main.js": "74a025ea9e4ff1b736db07142ea5b5d35aa919d3f9d01cd5c80beac9dc052ee4",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",

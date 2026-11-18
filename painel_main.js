@@ -2737,7 +2737,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     if (timerPrevia) clearTimeout(timerPrevia);
     timerPrevia = setTimeout(async () => {
       try {
-        await chamar("/estilo/previa", { def: paraDef(), formato: E.formato || "h" });
+        await chamar("/estilo/previa", { def: paraDef(), formato: E.formato || "h", guias: !!E.guias });
         const im = $("edPrevia");
         if (im) im.src = SERVICO + "/painel/img/prev_editor.png?t=" + Date.now();
       } catch (e) { const m = $("edMsg"); if (m) m.textContent = "Prévia: " + (e && e.message ? e.message : e); }
@@ -2917,34 +2917,39 @@ $("btnTesteModelo").addEventListener("click", async () => {
       b.addEventListener("click", () => { E.formato = v; desenhar(); agendarPrevia(); });
       fm.appendChild(b);
     }
+    const bg = el("div", "ed-btn", E.guias ? "Guias: ligadas" : "Guias: desligadas"); bg.style.width = "auto"; bg.style.paddingLeft = "10px"; bg.style.paddingRight = "10px";
+    if (E.guias) { bg.style.backgroundColor = "#4a3fa0"; }
+    bg.addEventListener("click", () => { E.guias = !E.guias; desenhar(); agendarPrevia(); });
+    fm.appendChild(bg);
     prev.appendChild(fm);
+    const moldura = el("div"); moldura.style.position = "relative";
     const im = document.createElement("img"); im.id = "edPrevia"; im.className = "ed-prev";
     if (E.formato === "v") { im.style.width = "40%"; im.style.marginLeft = "auto"; im.style.marginRight = "auto"; }
-    prev.appendChild(im);
-    // setas: movem o texto inteiro (todas as linhas juntas)
-    prev.appendChild(el("div", "rt", "Mover o texto na tela (todas as linhas juntas)"));
-    prev.lastChild.style.fontSize = "12px"; prev.lastChild.style.marginTop = "8px";
-    const grade = el("div"); grade.style.width = "132px"; grade.style.marginLeft = "auto"; grade.style.marginRight = "auto"; grade.style.marginTop = "4px";
+    moldura.appendChild(im);
+    // setas dentro da prévia: movem a linha selecionada (ou todas, se nenhuma estiver aberta)
     const mover = (dx, dy) => {
-      if (!dx && !dy) { // centro: centraliza o bloco
-        const my = E.linhas.reduce((a, l) => a + l.y, 0) / E.linhas.length, mx = E.linhas.reduce((a, l) => a + l.x, 0) / E.linhas.length;
+      const alvo = (E.sel >= 0 && E.linhas[E.sel]) ? [E.linhas[E.sel]] : E.linhas;
+      if (!dx && !dy) {
+        const mx = alvo.reduce((a, l) => a + l.x, 0) / alvo.length, my = alvo.reduce((a, l) => a + l.y, 0) / alvo.length;
         dx = 50 - mx; dy = 50 - my;
       }
-      for (const l of E.linhas) { l.x = Math.max(5, Math.min(95, Math.round(l.x + dx))); l.y = Math.max(5, Math.min(95, Math.round(l.y + dy))); }
+      for (const l of alvo) { l.x = Math.max(5, Math.min(95, Math.round(l.x + dx))); l.y = Math.max(5, Math.min(95, Math.round(l.y + dy))); }
       desenhar(); agendarPrevia();
     };
-    const setas = [["↖", -5, -5], ["↑", 0, -5], ["↗", 5, -5], ["←", -5, 0], ["●", 0, 0], ["→", 5, 0], ["↙", -5, 5], ["↓", 0, 5], ["↘", 5, 5]];
-    for (let r = 0; r < 3; r++) {
-      const fila = el("div"); fila.style.display = "flex";
-      for (let c = 0; c < 3; c++) {
-        const [t, dx, dy] = setas[r * 3 + c];
-        const b = el("div", "ed-btn", t); b.style.width = "40px"; b.style.marginRight = "4px"; b.style.marginBottom = "4px"; b.style.textAlign = "center"; b.style.paddingLeft = "0px"; b.style.paddingRight = "0px";
-        b.addEventListener("click", () => mover(dx, dy));
-        fila.appendChild(b);
-      }
-      grade.appendChild(fila);
-    }
-    prev.appendChild(grade);
+    const setas = [["↖", -2, -2], ["↑", 0, -2], ["↗", 2, -2], ["←", -2, 0], ["●", 0, 0], ["→", 2, 0], ["↙", -2, 2], ["↓", 0, 2], ["↘", 2, 2]];
+    setas.forEach(([t, dx, dy], n) => {
+      const r = Math.floor(n / 3), c = n % 3;
+      const b = el("div", "", t);
+      b.style.position = "absolute"; b.style.width = "26px"; b.style.height = "26px"; b.style.lineHeight = "26px"; b.style.textAlign = "center";
+      b.style.right = (6 + (2 - c) * 28) + "px"; b.style.bottom = (6 + (2 - r) * 28) + "px";
+      b.style.backgroundColor = "rgba(20,20,30,0.75)"; b.style.color = "#ffffff"; b.style.borderRadius = "6px"; b.style.cursor = "pointer"; b.style.fontSize = "14px";
+      b.addEventListener("click", (ev) => { ev.stopPropagation(); mover(dx, dy); });
+      moldura.appendChild(b);
+    });
+    prev.appendChild(moldura);
+    const dica = el("div", "rt", E.sel >= 0 ? "As setas movem a Linha " + (E.sel + 1) + " (a que está aberta)." : "As setas movem todas as linhas juntas."); dica.style.fontSize = "12px"; dica.style.marginTop = "6px";
+    prev.appendChild(dica);
+
     caixa.appendChild(prev);
 
     // linhas: clique numa para abrir as opções dela

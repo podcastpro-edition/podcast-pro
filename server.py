@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.59"
+VERSAO = "1.0.60"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1844,7 +1844,7 @@ def _quadro_legenda(sprites, W, H, t, dur, anim=None):
     return quadro
 
 
-def renderizar_previa(defn, texto, saida_png, W=1280, H=720, recorte=(640, 300)):
+def renderizar_previa(defn, texto, saida_png, W=1280, H=720, recorte=(640, 300), guias=False):
     """Desenha o estilo parado (como fica no meio da legenda) sobre um fundo escuro e salva um PNG."""
     from PIL import Image
     d = _def_estilo(defn)
@@ -1852,6 +1852,16 @@ def renderizar_previa(defn, texto, saida_png, W=1280, H=720, recorte=(640, 300))
     quadro = _quadro_legenda(sp, W, H, 5.0, 99.0, d["anim"])
     fundo = Image.new("RGBA", (W, H), (36, 36, 52, 255))
     fundo.alpha_composite(quadro)
+    if guias:
+        from PIL import ImageDraw
+        g = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        dg = ImageDraw.Draw(g)
+        dg.rectangle((0, 0, W - 1, H - 1), outline=(255, 255, 255, 200), width=2)  # bordas do vídeo
+        mx, my = int(W * 0.05), int(H * 0.05)
+        dg.rectangle((mx, my, W - mx, H - my), outline=(255, 214, 0, 220), width=2)  # margem de segurança (90%)
+        dg.line((W // 2, 0, W // 2, H), fill=(0, 220, 255, 200), width=2)  # centro
+        dg.line((0, H // 2, W, H // 2), fill=(0, 220, 255, 200), width=2)
+        fundo.alpha_composite(g)
     if recorte:
         cw, ch = recorte
         x0, y0 = (W - cw) // 2, int(H * 0.5 - ch / 2)
@@ -2523,7 +2533,8 @@ class Handler(BaseHTTPRequestHandler):
                     vert = corpo.get("formato") == "v"
                     renderizar_previa(corpo.get("def") or {}, corpo.get("texto") or "Seu texto aparece aqui",
                                       os.path.join(_RAIZ, "painel", "img", "prev_editor.png"),
-                                      W=720 if vert else 1280, H=1280 if vert else 720, recorte=None)
+                                      W=720 if vert else 1280, H=1280 if vert else 720, recorte=None,
+                                      guias=bool(corpo.get("guias")))
                     return self._responder({"ok": True})
                 except Exception as e:
                     return self._responder({"erro": str(e)}, 400)
