@@ -953,7 +953,21 @@ async function fluxoPodcastCompleto() {
     // PASSO 1: sincronia
     etapa = "conferir a sincronia";
     mostrar("Passo 1 de 2: conferindo a sincronia das câmeras com o áudio...\n(uns 20 segundos; não mexa no Premiere)");
-    const wav = await wavDoPodcast(ppro, origem);
+    let wav;
+    try {
+      wav = await wavDoPodcast(ppro, origem);
+    } catch (e) {
+      const m = String(e && e.message ? e.message : e);
+      if (m.indexOf("não tem as trilhas") >= 0) {
+        let nome = "", nV = 0, nA = 0;
+        try { nome = origem.name || ""; nV = await origem.getVideoTrackCount(); nA = await origem.getAudioTrackCount(); } catch (x) { /* segue */ }
+        mostrar("Parei: a sequência aberta não bate com as trilhas escolhidas.");
+        return popup("A sequência aberta não bate com as trilhas escolhidas",
+          "A sequência ativa" + (nome ? " (" + nome + ")" : "") + " tem " + nV + " trilha(s) de vídeo e " + nA + " de áudio, mas as caixas pedem: " + m.split("trilhas:")[1].split(".")[0].trim() + ". Abra a sequência original do podcast (a que tem as câmeras e os microfones) ou ajuste os números V e A em \"Selecionar participantes e apresentador\".",
+          [{ rotulo: "Ajustar participantes e apresentador", cor: "azul", acao: abrirParticipantes }, { rotulo: "Fechar" }]);
+      }
+      throw e;
+    }
     const caminhos = [];
     for (const v of cams) caminhos.push(await caminhoDaTrilha(ppro, origem, "V", parseInt(v.slice(1), 10) - 1));
     const sync = await chamar("/sync", { path: wav, outros: caminhos });

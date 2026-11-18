@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.40",
-  "notas": "Montar podcast completo: sincroniza, corta e oferece refinar",
+  "versao": "1.0.41",
+  "notas": "Aviso claro quando a sequencia aberta nao tem as trilhas",
   "arquivos": {
-    "server.py": "bc0f0ac084833fa6c1a8ce7cba01230f1465c05278920ae3d914da7be673da92",
+    "server.py": "d91f64759e1457c000f046fd8501270b3472756cce062a96cc0cfe86098d6d71",
     "painel_index.html": "116987e910d3f0d305d5330dec15a3b5f63081fd5eb1922ed4e2fb145ca8bca4",
-    "painel_main.js": "8096483c1499fab3837873464459e77d970e701bb17a46a167c9824688106325",
+    "painel_main.js": "9a63341fd1d8f53db9443a4864c40909ca22cc06de5b329d232a2ea38cd08b84",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",
