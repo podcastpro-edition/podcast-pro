@@ -3309,8 +3309,9 @@ $("btnTesteModelo").addEventListener("click", async () => {
       if (!fontes.length) { try { fontes = (await (await fetch(SERVICO + "/estilos/fontes")).json()).fontes || []; } catch (e) { fontes = []; } }
       if (!E) E = { nome: "", base: "", editando: null, linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } };
       // se um estilo está escolhido na galeria, já abre com as opções dele para editar
-      if (sel && sel.value && sel.value !== E.base && sel.value !== E.editando) carregarBase(sel.value);
-      else { desenhar(); agendarPrevia(); }
+      let carregou = false;
+      if (sel && sel.value && sel.value !== E.base && sel.value !== E.editando) carregou = carregarBase(sel.value);
+      if (!carregou) { desenhar(); agendarPrevia(); } // "Aleatório" ou outro item que não é um estilo: abre o editor normal
     } catch (e) { caixa.textContent = "Não consegui abrir o criador: " + (e && e.message ? e.message : e); }
   });
 
