@@ -2191,3 +2191,18 @@ $("btnTesteModelo").addEventListener("click", async () => {
   bUma.addEventListener("click", () => window.abrirEdicaoLegenda("uma"));
   bTodas.addEventListener("click", () => window.abrirEdicaoLegenda("todas"));
 })();
+
+
+// ---- Botão para voltar ao topo (aparece ao rolar para baixo, em qualquer aba) ----
+(function () {
+  const b = $("btnTopo");
+  if (!b) return;
+  const pos = () => Math.max(window.scrollY || 0, document.documentElement.scrollTop || 0, document.body.scrollTop || 0);
+  const atualizar = () => b.classList.toggle("vis", pos() > 150);
+  window.addEventListener("scroll", atualizar, true);
+  setInterval(atualizar, 700);
+  b.addEventListener("click", () => {
+    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (e) { window.scrollTo(0, 0); }
+    document.documentElement.scrollTop = 0; document.body.scrollTop = 0;
+  });
+})();
