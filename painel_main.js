@@ -2720,9 +2720,19 @@ $("btnTesteModelo").addEventListener("click", async () => {
       anim: Object.assign({ entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" }, def.anim || {}),
     };
   }
+  function ordenarPorProfundidade(d, def) { // a lista do editor segue a profundidade (de cima = na frente)
+    d.linhas.forEach((l, i) => { l.uid = i; });
+    const pil = def.anim && def.anim.pilha;
+    if (Array.isArray(pil) && pil.length === d.linhas.length) d.linhas = d.linhas.map((l, i) => [pil[i], l]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+    return d;
+  }
+  function ordemEntrada() { // ordem em que as linhas aparecem na animação (não muda ao reordenar a profundidade)
+    E.linhas.forEach((l, i) => { if (l.uid === undefined) l.uid = 100 + i; });
+    return E.linhas.slice().sort((a, b) => a.uid - b.uid);
+  }
   function paraDef() { // estado -> definição para o servidor
     return {
-      linhas: E.linhas.map((l) => {
+      linhas: ordemEntrada().map((l) => {
         const o = { f: l.f, tam: l.tam / 100, y: l.y / 100, x: l.x / 100, cor: hex2rgb(l.cor) || [255, 255, 255], caixa: l.caixa, rot: l.rot };
         if (l.contorno.on) o.contorno = { cor: hex2rgb(l.contorno.cor) || [0, 0, 0], larg: l.contorno.larg / 100 };
         o.sombra = l.sombra.on ? { opac: l.sombra.forca / 100 } : { ligada: false };
@@ -2906,7 +2916,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const bases = [["", "Em branco"]].concat(estilos.map((e) => [e.nome, e.nome + (e.usuario ? " (meu)" : "")]));
     topo.appendChild(selecionar(bases, E.base || "", (v) => {
       if (!v) { E = { nome: E.nome, base: "", editando: null, sel: 0, linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } }; }
-      else { const e = estilos.find((x) => x.nome === v); const d = doDef(e.def); E = { nome: e.usuario ? e.nome : "", base: v, editando: e.usuario ? e.nome : null, sel: 0, linhas: d.linhas, anim: d.anim }; }
+      else { const e = estilos.find((x) => x.nome === v); const d = ordenarPorProfundidade(doDef(e.def), e.def); E = { nome: e.usuario ? e.nome : "", base: v, editando: e.usuario ? e.nome : null, sel: 0, linhas: d.linhas, anim: d.anim }; }
       desenhar(); agendarPrevia();
     }));
     topo.appendChild(el("div", "rt", "Nome do estilo")); topo.lastChild.style.fontSize = "12px"; topo.lastChild.style.marginTop = "8px";
@@ -2974,7 +2984,25 @@ $("btnTesteModelo").addEventListener("click", async () => {
     // linhas: clique numa para abrir as opções dela
     const cl = el("div", "ed-card");
     cl.appendChild(el("div", "ed-tit", "Linhas do texto"));
-    const exp = el("div", "rt", "Clique na linha para marcá-la (as setas da prévia movem as marcadas). ▸ abre as opções, ▲▼ mudam a ordem: a de cima fica na frente."); exp.style.fontSize = "12px"; cl.appendChild(exp);
+    const exp = el("div", "rt", "Clique na linha para marcá-la (as setas da prévia movem as marcadas). A seta ▾ abre as opções. Arraste o ≡ para mudar a profundidade: a de cima fica na frente das outras."); exp.style.fontSize = "12px"; cl.appendChild(exp);
+    const itens = [];
+    const iniciarArraste = (de) => { // arrastar pela alça ≡: solta onde quiser na lista (cima = na frente)
+      let alvo = de;
+      const onde = (ev) => { let k = itens.length - 1; for (let n = 0; n < itens.length; n++) { const r = itens[n].getBoundingClientRect(); if (ev.clientY < r.top + r.height / 2) { k = n; break; } } return k; };
+      const marcar = (k) => itens.forEach((e, n) => { e.style.borderColor = n === k ? "#ffd60a" : ""; });
+      marcar(de);
+      const mover = (ev) => { alvo = onde(ev); marcar(alvo); };
+      const soltar = () => {
+        document.removeEventListener("mousemove", mover); document.removeEventListener("mouseup", soltar);
+        if (alvo === de) { desenhar(); return; }
+        const sel = E.sel >= 0 ? E.linhas[E.sel] : null; const marc = (E.marc || []).map((m) => E.linhas[m]);
+        const t = E.linhas.splice(de, 1)[0]; E.linhas.splice(alvo, 0, t);
+        if (sel) E.sel = E.linhas.indexOf(sel);
+        E.marc = marc.map((l) => E.linhas.indexOf(l));
+        desenhar(); agendarPrevia();
+      };
+      document.addEventListener("mousemove", mover); document.addEventListener("mouseup", soltar);
+    };
     E.linhas.forEach((l, i) => {
       const nf = (fontes.find((f) => f.id === l.f) || { nome: l.f }).nome;
       const marcada = (E.marc || []).indexOf(i) >= 0;
@@ -2982,17 +3010,13 @@ $("btnTesteModelo").addEventListener("click", async () => {
       it.style.display = "flex"; it.style.alignItems = "center";
       const tx = el("div", "", (marcada ? "✓ " : "") + "Linha " + (i + 1) + "   ·   " + nf + "   ·   " + l.tam + "%"); tx.style.flex = "1";
       it.appendChild(tx);
-      const mini = (t, fn) => { const b = el("div", "", t); b.style.width = "26px"; b.style.height = "24px"; b.style.lineHeight = "24px"; b.style.textAlign = "center"; b.style.marginLeft = "4px"; b.style.borderRadius = "6px"; b.style.backgroundColor = "#444458"; b.style.color = "#ffffff"; b.addEventListener("click", (ev) => { ev.stopPropagation(); fn(); }); return b; };
-      const trocar = (k) => {
-        const j = i + k; if (j < 0 || j >= E.linhas.length) return;
-        const t = E.linhas[i]; E.linhas[i] = E.linhas[j]; E.linhas[j] = t;
-        E.marc = (E.marc || []).map((m) => (m === i ? j : m === j ? i : m));
-        if (E.sel === i) E.sel = j; else if (E.sel === j) E.sel = i;
-        desenhar(); agendarPrevia();
-      };
-      it.appendChild(mini("▲", () => trocar(-1)));
-      it.appendChild(mini("▼", () => trocar(1)));
-      it.appendChild(mini(i === E.sel ? "▾" : "▸", () => { E.sel = (E.sel === i) ? -1 : i; desenhar(); agendarPrevia(); }));
+      const alca = el("div", "", "≡"); alca.style.width = "30px"; alca.style.height = "24px"; alca.style.lineHeight = "24px"; alca.style.textAlign = "center"; alca.style.fontSize = "20px"; alca.style.marginLeft = "4px"; alca.style.borderRadius = "6px"; alca.style.backgroundColor = "#444458"; alca.style.color = "#ffffff"; alca.style.cursor = "grab";
+      alca.addEventListener("mousedown", (ev) => { ev.stopPropagation(); ev.preventDefault(); iniciarArraste(i); });
+      const abre = el("div", "", "▾"); abre.style.width = "30px"; abre.style.height = "24px"; abre.style.lineHeight = "24px"; abre.style.textAlign = "center"; abre.style.marginLeft = "4px"; abre.style.borderRadius = "6px"; abre.style.backgroundColor = i === E.sel ? "#6a58e0" : "#444458"; abre.style.color = "#ffffff";
+      abre.addEventListener("click", (ev) => { ev.stopPropagation(); E.sel = (E.sel === i) ? -1 : i; desenhar(); agendarPrevia(); });
+      it.appendChild(alca);
+      it.appendChild(abre);
+      itens.push(it);
       it.addEventListener("click", () => { // clicar na linha marca/desmarca (as setas movem as marcadas)
         const m = E.marc || []; const k = m.indexOf(i);
         E.marc = k >= 0 ? m.filter((v) => v !== i) : m.concat([i]);
@@ -3003,7 +3027,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     });
     if (E.linhas.length < 5) {
       const mais = el("div", "ed-btn", "+ Adicionar linha");
-      mais.addEventListener("click", () => { E.linhas.push(linhaPadrao(E.linhas.length)); E.sel = E.linhas.length - 1; desenhar(); agendarPrevia(); });
+      mais.addEventListener("click", () => { { const nl = linhaPadrao(E.linhas.length); nl.uid = Math.max(-1, ...E.linhas.map((x) => x.uid === undefined ? -1 : x.uid)) + 1; E.linhas.push(nl); } E.sel = E.linhas.length - 1; desenhar(); agendarPrevia(); });
       cl.appendChild(mais);
     }
     caixa.appendChild(cl);
