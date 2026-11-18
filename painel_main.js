@@ -2733,13 +2733,15 @@ $("btnTesteModelo").addEventListener("click", async () => {
       anim: E.anim,
     };
   }
+  let ULTIMA_PREVIA = "";
   function agendarPrevia() {
     if (timerPrevia) clearTimeout(timerPrevia);
     timerPrevia = setTimeout(async () => {
       try {
         await chamar("/estilo/previa", { def: paraDef(), formato: E.formato || "h", guias: !!E.guias });
         const im = $("edPrevia");
-        if (im) im.src = SERVICO + "/painel/img/prev_editor.png?t=" + Date.now();
+        ULTIMA_PREVIA = SERVICO + "/painel/img/prev_editor.png?t=" + Date.now();
+        if (im) im.src = ULTIMA_PREVIA;
       } catch (e) { const m = $("edMsg"); if (m) m.textContent = "Prévia: " + (e && e.message ? e.message : e); }
     }, 400);
   }
@@ -2924,6 +2926,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     prev.appendChild(fm);
     const moldura = el("div"); moldura.style.position = "relative";
     const im = document.createElement("img"); im.id = "edPrevia"; im.className = "ed-prev";
+    if (ULTIMA_PREVIA) im.src = ULTIMA_PREVIA; // mantém a imagem anterior até a nova ficar pronta (sem piscar)
     if (E.formato === "v") { im.style.width = "40%"; im.style.marginLeft = "auto"; im.style.marginRight = "auto"; }
     moldura.appendChild(im);
     // setas dentro da prévia: movem a linha selecionada (ou todas, se nenhuma estiver aberta)
@@ -2934,6 +2937,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
         dx = 50 - mx; dy = 50 - my;
       }
       for (const l of alvo) { l.x = Math.max(5, Math.min(95, Math.round(l.x + dx))); l.y = Math.max(5, Math.min(95, Math.round(l.y + dy))); }
+      E.msgMov = (alvo.length === 1 ? "Linha " + (E.sel + 1) : "Todas as linhas") + ": esquerda " + Math.round(alvo[0].x) + "%, altura " + Math.round(alvo[0].y) + "%";
       desenhar(); agendarPrevia();
     };
     const setas = [["↖", -2, -2], ["↑", 0, -2], ["↗", 2, -2], ["←", -2, 0], ["●", 0, 0], ["→", 2, 0], ["↙", -2, 2], ["↓", 0, 2], ["↘", 2, 2]];
@@ -2947,7 +2951,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       moldura.appendChild(b);
     });
     prev.appendChild(moldura);
-    const dica = el("div", "rt", E.sel >= 0 ? "As setas movem a Linha " + (E.sel + 1) + " (a que está aberta)." : "As setas movem todas as linhas juntas."); dica.style.fontSize = "12px"; dica.style.marginTop = "6px";
+    const dica = el("div", "rt", (E.msgMov ? E.msgMov + ". " : "") + (E.sel >= 0 ? "As setas movem a Linha " + (E.sel + 1) + " (a que está aberta)." : "As setas movem todas as linhas juntas.")); dica.style.fontSize = "12px"; dica.style.marginTop = "6px";
     prev.appendChild(dica);
 
     caixa.appendChild(prev);
