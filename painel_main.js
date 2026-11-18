@@ -1826,28 +1826,57 @@ $("btnAtualizar").addEventListener("click", async () => {
   const sel = $("estEstilo"), gal = $("galeria");
   if (!sel || !gal) return;
   const COM_IMAGEM = new Set(["Bold", "Classic", "Film", "Modern", "Simple", "Criativo 1", "Criativo 2", "Criativo 3", "Criativo 4"]);
+  const PADRAO = ["aleatorio", "Criativo 1", "Criativo 2", "Criativo 3", "Criativo 4"];
+  let favoritos = new Set(PADRAO);
+  try { const s = localStorage.getItem("ppFavEstilos"); if (s) favoritos = new Set(JSON.parse(s)); } catch (e) { /* sem armazenamento */ }
+  const salvar = () => { try { localStorage.setItem("ppFavEstilos", JSON.stringify(Array.from(favoritos))); } catch (e) { /* ignora */ } };
+  let aberto = false;
   let assinatura = "";
+  function cartao(o) {
+    const card = document.createElement("div");
+    card.className = "modelo" + (o.value === sel.value ? " sel" : "");
+    if (COM_IMAGEM.has(o.value)) {
+      const im = document.createElement("img");
+      im.src = SERVICO + "/painel/img/" + o.value.replace(" ", "_") + ".png";
+      im.onerror = () => { const d = document.createElement("div"); d.className = "sem"; d.textContent = o.value; if (im.parentNode) im.parentNode.replaceChild(d, im); };
+      card.appendChild(im);
+    } else {
+      const d = document.createElement("div"); d.className = "sem"; d.textContent = o.value === "aleatorio" ? "🎲 mistura" : "modelo"; card.appendChild(d);
+    }
+    const nome = document.createElement("div"); nome.className = "nome"; nome.textContent = o.textContent;
+    const est = document.createElement("span"); est.className = "estrela" + (favoritos.has(o.value) ? " on" : "");
+    est.textContent = favoritos.has(o.value) ? "★" : "☆"; est.title = favoritos.has(o.value) ? "Tirar dos favoritos" : "Adicionar aos favoritos";
+    est.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (favoritos.has(o.value)) favoritos.delete(o.value); else favoritos.add(o.value);
+      salvar(); assinatura = ""; desenhar();
+    });
+    nome.appendChild(est);
+    card.appendChild(nome);
+    card.addEventListener("click", () => { sel.value = o.value; assinatura = ""; desenhar(); });
+    return card;
+  }
   function desenhar() {
     const ops = Array.from(sel.options);
-    const ass = ops.map((o) => o.value + "|" + o.textContent).join(";") + "#" + sel.value;
+    const ass = ops.map((o) => o.value + "|" + o.textContent).join(";") + "#" + sel.value + "#" + Array.from(favoritos).join(",") + "#" + aberto;
     if (ass === assinatura) return;
     assinatura = ass;
     gal.innerHTML = "";
-    for (const o of ops) {
-      const card = document.createElement("div");
-      card.className = "modelo" + (o.value === sel.value ? " sel" : "");
-      if (COM_IMAGEM.has(o.value)) {
-        const im = document.createElement("img");
-        im.src = SERVICO + "/painel/img/" + o.value.replace(" ", "_") + ".png";
-        im.onerror = () => { const d = document.createElement("div"); d.className = "sem"; d.textContent = o.value; if (im.parentNode) im.parentNode.replaceChild(d, im); };
-        card.appendChild(im);
-      } else {
-        const d = document.createElement("div"); d.className = "sem"; d.textContent = o.value === "aleatorio" ? "🎲 mistura" : "modelo"; card.appendChild(d);
+    const fav = ops.filter((o) => favoritos.has(o.value) || o.value === sel.value);
+    const demais = ops.filter((o) => !fav.includes(o));
+    const caixaFav = document.createElement("div"); caixaFav.className = "favoritos";
+    fav.forEach((o) => caixaFav.appendChild(cartao(o)));
+    gal.appendChild(caixaFav);
+    if (demais.length) {
+      const bt = document.createElement("div"); bt.className = "mini"; bt.style.width = "100%";
+      bt.textContent = aberto ? "− Ocultar modelos" : "+ Modelos (" + demais.length + ")";
+      bt.addEventListener("click", () => { aberto = !aberto; assinatura = ""; desenhar(); });
+      gal.appendChild(bt);
+      if (aberto) {
+        const caixa = document.createElement("div"); caixa.className = "outros";
+        demais.forEach((o) => caixa.appendChild(cartao(o)));
+        gal.appendChild(caixa);
       }
-      const nome = document.createElement("div"); nome.className = "nome"; nome.textContent = o.textContent;
-      card.appendChild(nome);
-      card.addEventListener("click", () => { sel.value = o.value; assinatura = ""; desenhar(); });
-      gal.appendChild(card);
     }
   }
   desenhar();
