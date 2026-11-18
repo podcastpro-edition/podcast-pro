@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.49"
+VERSAO = "1.0.50"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -868,6 +868,123 @@ def equalizar_audio(caminho, saida, canais=None, canal=None, trechos=None, recor
             "ganhos": {str(c): round(g, 1) for c, g in ganho.items()}}
 
 
+# ----------------------------------- defeitos de câmera (tremida, chicote, desfoque)
+
+SENSIBILIDADE_CAMERA = {"baixa": 1.6, "media": 1.0, "alta": 0.65}
+
+
+def defeitos_camera(caminho, ini, fim, sensibilidade="media", fps=10, largura=320):
+    """Procura momentos ruins no vídeo de uma câmera, no intervalo [ini, fim] (tempo do arquivo).
+    Devolve [{"a","b","tipo"}]: 'chicote' (movimento brusco do quadro), 'tremida' (balanço repetido)
+    e 'desfoque' (perda de nitidez). Mede o movimento do quadro inteiro, não o das pessoas."""
+    import numpy as np
+    try:
+        import cv2
+    except ImportError:
+        raise RuntimeError("Falta a biblioteca de imagem (cv2). Rode o INSTALAR.bat de novo.")
+    k = SENSIBILIDADE_CAMERA.get(str(sensibilidade).lower(), 1.0)
+    W, H = tamanho_video(caminho)
+    aw = largura
+    ah = int(round(H * aw / W / 2.0)) * 2
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error"]
+    if ini > 0:
+        cmd += ["-ss", f"{ini:.3f}"]
+    cmd += ["-t", f"{max(0.5, fim - ini):.3f}", "-i", caminho, "-an",
+            "-vf", f"fps={fps},scale={aw}:{ah},format=gray", "-f", "rawvideo", "-"]
+    bruto = subprocess.run(cmd, capture_output=True).stdout
+    tam = aw * ah
+    n = len(bruto) // tam
+    if n < fps * 2:
+        return []
+    quadros = np.frombuffer(bruto[: n * tam], dtype=np.uint8).reshape(n, ah, aw)
+    janela = cv2.createHanningWindow((aw, ah), cv2.CV_32F)
+    dx = np.zeros(n); dy = np.zeros(n); ok = np.zeros(n, dtype=bool); nitidez = np.zeros(n)
+    anterior = None
+    for i in range(n):
+        q = quadros[i].astype(np.float32)
+        nitidez[i] = cv2.Laplacian(quadros[i], cv2.CV_32F).var()
+        if anterior is not None:
+            (sx, sy), resp = cv2.phaseCorrelate(anterior, q, janela)
+            if resp > 0.05:  # só confia quando as duas imagens se parecem
+                dx[i], dy[i], ok[i] = sx / aw, sy / aw, True  # em larguras do quadro
+        anterior = q
+    mov = np.hypot(dx, dy)
+    achados = []  # (a, b, tipo) em quadros
+    # chicote: deslocamento grande entre dois quadros seguidos
+    lim_chicote = 0.05 * k
+    for i in np.where(ok & (mov > lim_chicote))[0]:
+        achados.append((i - 3, i + 6, "chicote"))
+    # tremida: em 1 s, o quadro muda de direção várias vezes com movimento pequeno mas constante
+    w = fps
+    lim_tremer = 0.006 * k
+    for i in range(0, n - w):
+        seg_x, seg_y, seg_ok = dx[i:i + w], dy[i:i + w], ok[i:i + w]
+        if seg_ok.sum() < w * 0.7:
+            continue
+        def inversoes(v):
+            v = v[np.abs(v) > 0.0015]
+            return int((np.sign(v[1:]) != np.sign(v[:-1])).sum()) if len(v) > 1 else 0
+        if max(inversoes(seg_x), inversoes(seg_y)) >= 4 and np.mean(mov[i:i + w][seg_ok]) > lim_tremer:
+            achados.append((i, i + w, "tremida"))
+    # desfoque: nitidez cai muito abaixo do normal da câmera (mediana das últimas ~5 s)
+    ref = np.array([np.median(nitidez[max(0, i - 5 * fps): i + 1]) for i in range(n)])
+    ruim = nitidez < ref * (0.35 / k)
+    i = 0
+    while i < n:
+        if ruim[i]:
+            j = i
+            while j < n and ruim[j]:
+                j += 1
+            if j - i >= 3:
+                achados.append((i, j, "desfoque"))
+            i = j
+        else:
+            i += 1
+    # junta e converte para segundos
+    achados.sort()
+    saida = []
+    for a, b, tipo in achados:
+        a, b = max(0, a) / fps + ini, min(n, b) / fps + ini
+        if saida and a <= saida[-1]["b"] + 0.2:
+            saida[-1]["b"] = max(saida[-1]["b"], b)
+            if tipo not in saida[-1]["tipo"]:
+                saida[-1]["tipo"] += "+" + tipo
+        else:
+            saida.append({"a": float(round(a, 2)), "b": float(round(b, 2)), "tipo": tipo})
+    return saida
+
+
+def trocar_por_defeitos(trechos, defeitos, cameras_ordem, geral):
+    """trechos: [{ini,fim,quem,camera}] em tempo do gravador. defeitos: {camera: [(a,b)]} no mesmo
+    tempo. Onde a câmera escolhida está ruim, usa outra boa (a geral primeiro). Devolve (trechos, trocas)."""
+    def ruim(cam, a, b):
+        return any(x < b and y > a for x, y in defeitos.get(cam, []))
+
+    saida, trocas = [], []
+    for tr in trechos:
+        cam = tr["camera"] or geral
+        pontos = {tr["ini"], tr["fim"]}
+        for x, y in defeitos.get(cam, []):
+            for v in (x, y):
+                if tr["ini"] < v < tr["fim"]:
+                    pontos.add(v)
+        pontos = sorted(pontos)
+        for a, b in zip(pontos, pontos[1:]):
+            nova = cam
+            if ruim(cam, a, b):
+                alternativas = [geral] + [c for c in cameras_ordem if c not in (geral, cam)]
+                for alt in alternativas:
+                    if alt != cam and not ruim(alt, a, b):
+                        nova = alt
+                        break
+            novo = dict(tr)
+            novo["ini"], novo["fim"], novo["camera"] = a, b, nova
+            if nova != cam:
+                trocas.append({"a": round(a, 2), "b": round(b, 2), "de": cam, "para": nova})
+            saida.append(novo)
+    return saida, trocas
+
+
 def deslocamentos(ref, outros, duracao=600, maximo=30.0):
     """Quanto cada arquivo em 'outros' está atrasado (+) ou adiantado (-) em
     relação a 'ref', comparando o áudio (envelope). Devolve [(deslocamento, confiança)]."""
@@ -956,7 +1073,7 @@ def priorizar_apresentador(trechos, pessoas, apresentadores, nivel):
 
 def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
                   cortar_silencios=False, faixas=None, apresentador=None, prioridade=0,
-                  trechos_prontos=None, recorte=None):
+                  trechos_prontos=None, recorte=None, corrigir_camera=None):
     """Junta tudo: sincronia das câmeras, quem fala, silêncios a cortar.
     cameras: {"V1": caminho, ...}. Devolve o plano de montagem."""
     total = duracao_total(wav)
@@ -977,6 +1094,26 @@ def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
     else:
         trechos, tempo, alguem, janela = quem_fala(pessoas, wav, duracao_minima=duracao_minima, recorte=recorte)
     trechos = priorizar_apresentador(trechos, pessoas, apresentador, int(prioridade or 0))
+
+    trocas_defeito, defeitos_achados = [], {}
+    if corrigir_camera:
+        rec_d = _recorte_ok(recorte, total)
+        for cam, info in atraso.items():
+            d = info["valor"]  # a câmera está 'd' segundos adiante do gravador
+            a0 = (rec_d[0] if rec_d else 0.0) + d
+            b0 = (rec_d[1] if rec_d else total) + d
+            achados = defeitos_camera(cameras[cam], max(0.0, a0), b0, corrigir_camera)
+            # em tempo do gravador, com folga para a troca não virar uma "piscada" de menos de 0,6 s
+            lista = []
+            for x in achados:
+                a, b = x["a"] - d - 0.15, x["b"] - d + 0.15
+                if b - a < 0.6:
+                    c = (a + b) / 2
+                    a, b = c - 0.3, c + 0.3
+                lista.append((a, b, x["tipo"]))
+            defeitos_achados[cam] = lista
+        trechos, trocas_defeito = trocar_por_defeitos(
+            trechos, {c: [(a, b) for a, b, _ in v] for c, v in defeitos_achados.items()}, list(cameras.keys()), geral)
 
     # silêncios = janelas em que ninguém fala, com pelo menos 'minimo' segundos
     silencios, ini = [], None
@@ -1048,7 +1185,9 @@ def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
         relogio += b - a
     return {"duracao": total, "duracaoFinal": relogio, "atraso": atraso,
             "faixaComImagem": [inicio_ok, fim_ok],
-            "tempo": tempo, "keeps": keeps, "pecas": pecas}
+            "tempo": tempo, "keeps": keeps, "pecas": pecas,
+            "defeitos": {c: [{"a": round(a, 2), "b": round(b, 2), "tipo": t} for a, b, t in v] for c, v in defeitos_achados.items()},
+            "trocasPorDefeito": trocas_defeito}
 
 
 
@@ -2235,7 +2374,7 @@ class Handler(BaseHTTPRequestHandler):
                     float(corpo.get("duracaoMinima", 2.0)),
                     bool(corpo.get("cortarSilencios", False)), corpo.get("faixas"),
                     corpo.get("apresentadores") or corpo.get("apresentador"), int(corpo.get("prioridade", 0)),
-                    corpo.get("trechosProntos"), corpo.get("recorte")))
+                    corpo.get("trechosProntos"), corpo.get("recorte"), corpo.get("corrigirCamera")))
 
             if self.path == "/buscar":
                 return self._responder(buscar_trechos(

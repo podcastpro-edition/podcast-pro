@@ -964,7 +964,7 @@ async function montarPodcastInterno(limite, opcoes = {}) {
     }
 
     etapa = "calcular o plano de cortes";
-    mostrar("Calculando sincronia e cortes...\n(uns 40 segundos; não mexa no Premiere)");
+    mostrar("Calculando sincronia e cortes" + ($("corrigirCam") && $("corrigirCam").value === "1" ? " e procurando tremidas nas câmeras" : "") + "...\n(pode levar alguns minutos; não mexa no Premiere)");
     const plano = await chamar("/plano_podcast", {
       path: wav, cameras,
       pessoas: PODCAST.pessoas.map((p) => ({ nome: p.nome, canal: p.canal, camera: p.camera })),
@@ -973,6 +973,7 @@ async function montarPodcastInterno(limite, opcoes = {}) {
       cortarSilencios: PODCAST.cortarSilencios,
       faixas: opcoes.faixas || null,
       trechosProntos, recorte,
+      corrigirCamera: $("corrigirCam") && $("corrigirCam").value === "1" ? ($("sensCam") ? $("sensCam").value : "media") : null,
     });
     const pecas = plano.pecas.filter((p) => p.t < limite);
     const keeps = plano.keeps.filter((k) => k.t < limite);
@@ -1125,7 +1126,7 @@ async function montarPodcastInterno(limite, opcoes = {}) {
     const atrasos = Object.entries(plano.atraso).map(([c, v]) => c + " " + v.valor.toFixed(3) + "s").join(" | ");
     mostrar("Pronto. Sequência " + nome + " criada (veja no painel Projeto).\n" +
       totalPecas + " peças de vídeo (3 câmeras), " + keeps.length + " trecho(s) de áudio, " + (await fimSeq()).toFixed(1) + " s (áudio original: " + plano.duracao.toFixed(1) + " s; com imagem em todas as câmeras de " + plano.faixaComImagem[0].toFixed(1) + " a " + plano.faixaComImagem[1].toFixed(1) + " s).\n" +
-      "Atraso das câmeras: " + atrasos + (recorte ? "\nTrecho usado: " + recorte[0].toFixed(1) + " a " + recorte[1].toFixed(1) + " s do material" : "") + (eq ? "\nVolume equalizado (ajuste em dB): " + Object.entries(eq.ganhos).map(([k, v]) => k + " " + (v > 0 ? "+" : "") + v).join(", ") : "") + "\nTrilhas silenciadas: " + silenciadas + falhaMute +
+      "Atraso das câmeras: " + atrasos + (recorte ? "\nTrecho usado: " + recorte[0].toFixed(1) + " a " + recorte[1].toFixed(1) + " s do material" : "") + (plano.trocasPorDefeito && $("corrigirCam") && $("corrigirCam").value === "1" ? "\nCorreção de câmera: " + (plano.trocasPorDefeito.length ? plano.trocasPorDefeito.length + " troca(s) por tremida/movimento brusco: " + plano.trocasPorDefeito.slice(0, 6).map((x) => { const s = Math.max(0, x.a - (recorte ? recorte[0] : 0)); return Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0") + " " + x.de + "→" + x.para; }).join(", ") + (plano.trocasPorDefeito.length > 6 ? "..." : "") : "nenhum defeito encontrado") : "") + (eq ? "\nVolume equalizado (ajuste em dB): " + Object.entries(eq.ganhos).map(([k, v]) => k + " " + (v > 0 ? "+" : "") + v).join(", ") : "") + "\nTrilhas silenciadas: " + silenciadas + falhaMute +
       (avisos.length ? "\nAVISOS:\n- " + avisos.join("\n- ") : "\nSem avisos.") + "\n" + linhas.join("\n"));
     return true;
   } catch (e) {

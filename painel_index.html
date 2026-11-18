@@ -203,6 +203,17 @@
       <option value="1" selected>Sim (todas no mesmo volume)</option>
       <option value="0">Não</option>
     </select>
+    <label class="rot" for="corrigirCam">Corrigir tremidas e movimentos bruscos da câmera</label>
+    <select id="corrigirCam">
+      <option value="1" selected>Sim (troca de câmera no momento ruim)</option>
+      <option value="0">Não</option>
+    </select>
+    <label class="rot" for="sensCam">Sensibilidade da correção</label>
+    <select id="sensCam">
+      <option value="baixa">Baixa (só erros grandes)</option>
+      <option value="media" selected>Média</option>
+      <option value="alta">Alta (pega até pequenas tremidas)</option>
+    </select>
     <div id="btnConcluirPartic" class="pb-ok">✔ Concluir</div>
     </div>
     <div id="btnPodcastTudo" class="cartao"><div class="ico">🎙</div><div class="tx"><div class="t1">Montar podcast completo</div><div class="t2">Alterna as câmeras sozinho</div></div></div>
