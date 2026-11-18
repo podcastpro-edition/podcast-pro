@@ -2223,11 +2223,18 @@ $("btnTesteModelo").addEventListener("click", async () => {
   const b = $("btnTopo");
   if (!b) return;
   const pos = () => Math.max(window.scrollY || 0, document.documentElement.scrollTop || 0, document.body.scrollTop || 0);
-  const atualizar = () => b.classList.toggle("vis", pos() > 150);
+  const atualizar = () => {
+    const p = pos();
+    const alt = window.innerHeight || document.documentElement.clientHeight || 400;
+    b.style.top = Math.round(p + alt - 56) + "px";   // acompanha a rolagem (sem position: fixed)
+    b.classList.toggle("vis", p > 150);
+  };
   window.addEventListener("scroll", atualizar, true);
-  setInterval(atualizar, 700);
+  window.addEventListener("resize", atualizar);
+  setInterval(atualizar, 400);
   b.addEventListener("click", () => {
-    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (e) { window.scrollTo(0, 0); }
+    try { window.scrollTo(0, 0); } catch (e) { /* ignora */ }
     document.documentElement.scrollTop = 0; document.body.scrollTop = 0;
+    setTimeout(atualizar, 50);
   });
 })();
