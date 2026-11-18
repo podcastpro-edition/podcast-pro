@@ -249,6 +249,97 @@ async function acharClipe(ppro, projeto, caminho) {
   return varrer(await projeto.getRootItem());
 }
 
+
+// ---- Organização das legendas no projeto: tudo numa pasta só, sem acumular arquivos antigos ----
+const NOME_BIN_LEG = "Legendas PODCAST PRO";
+const ehArquivoLeg = (n) => /^leg\d+_.*\.mov$/i.test(String(n));
+
+async function binLegendas(ppro, projeto) {
+  const raiz = await projeto.getRootItem();
+  const achar = async () => {
+    for (const it of await raiz.getItems()) {
+      if (it.name !== NOME_BIN_LEG) continue;
+      try { const f = ppro.FolderItem.cast(it); if (f) return f; } catch (e) { /* não é pasta */ }
+    }
+    return null;
+  };
+  let bin = await achar();
+  if (bin) return bin;
+  try { await executar(projeto, "Criar pasta de legendas", () => raiz.createBinAction(NOME_BIN_LEG, true)); } catch (e) { return null; }
+  for (let w = 0; w < 10 && !bin; w++) { await dormir(300); bin = await achar(); }
+  return bin; // null = não deu para criar: usa a raiz do projeto
+}
+
+// Importa os arquivos direto na pasta das legendas e devolve { pasta, porNome }.
+async function importarLegendas(ppro, projeto, arquivos) {
+  const nomeDe = (c) => String(c).split(/[\\/]/).pop();
+  const pasta = (await binLegendas(ppro, projeto)) || (await projeto.getRootItem());
+  await projeto.importFiles(arquivos, true, pasta, false);
+  await dormir(1500);
+  let itens = [];
+  for (let w = 0; w < 30; w++) {
+    itens = await pasta.getItems();
+    const nomes = new Set(itens.map((x) => x.name));
+    if (arquivos.every((a) => nomes.has(nomeDe(a)))) break;
+    await dormir(1000);
+  }
+  return { pasta, porNome: new Map(itens.map((x) => [x.name, x])) };
+}
+
+// Move as legendas soltas para a pasta e tira do projeto as que não estão em nenhuma sequência.
+async function organizarLegendas(ppro, projeto, limpar = true) {
+  const r = { movidas: 0, removidas: 0, aviso: "" };
+  const lote = async (nome, itens, fazAcao) => {
+    for (let k = 0; k < itens.length; k += 25) {
+      const parte = itens.slice(k, k + 25);
+      projeto.lockedAccess(() => {
+        projeto.executeTransaction((c) => { for (const it of parte) c.addAction(fazAcao(it)); }, nome);
+      });
+      await dormir(400);
+    }
+  };
+  const raiz = await projeto.getRootItem();
+  const pasta = await binLegendas(ppro, projeto);
+  if (!pasta) { r.aviso = "não consegui criar a pasta de legendas"; return r; }
+  const soltas = (await raiz.getItems()).filter((it) => ehArquivoLeg(it.name));
+  if (soltas.length) {
+    try { await lote("Legendas: mover para a pasta", soltas, (it) => raiz.createMoveItemAction(it, pasta)); r.movidas = soltas.length; }
+    catch (e) { r.aviso = "não consegui mover as legendas soltas"; }
+  }
+  if (!limpar) return r;
+  // nomes usados em QUALQUER sequência do projeto (se não der para ler todas, não apaga nada)
+  const usados = new Set();
+  try {
+    const seqs = await projeto.getSequences();
+    for (const sq of seqs) {
+      const nV = await sq.getVideoTrackCount();
+      for (let i = 0; i < nV; i++) {
+        const its = await (await sq.getVideoTrack(i)).getTrackItems(1, false);
+        for (const it of its) { try { usados.add((await it.getProjectItem()).name); } catch (e) { /* segue */ } }
+      }
+    }
+  } catch (e) { r.aviso += (r.aviso ? "; " : "") + "não consegui ver todas as sequências, então não apaguei nada"; return r; }
+  const dentro = (await pasta.getItems()).filter((it) => ehArquivoLeg(it.name));
+  const sobras = dentro.filter((it) => !usados.has(it.name));
+  if (sobras.length) {
+    try {
+      await lote("Legendas: tirar as não usadas", sobras, (it) => pasta.createRemoveItemAction(it));
+      const depois = (await pasta.getItems()).filter((it) => ehArquivoLeg(it.name)).length;
+      r.removidas = Math.max(0, dentro.length - depois);
+      if (r.removidas === 0) r.aviso += (r.aviso ? "; " : "") + "o Premiere não deixou tirar as legendas antigas do projeto";
+    } catch (e) { r.aviso += (r.aviso ? "; " : "") + "não consegui tirar as legendas antigas: " + (e && e.message ? e.message : e); }
+  }
+  // arquivos antigos no disco (só os de mais de 1 dia, para o Ctrl+Z ainda funcionar)
+  try {
+    const emUso = (await pasta.getItems()).filter((it) => ehArquivoLeg(it.name)).map((it) => it.name);
+    for (const n of usados) if (ehArquivoLeg(n) && !emUso.includes(n)) emUso.push(n);
+    await chamar("/legenda/limpar_disco", { emUso });
+  } catch (e) { /* limpeza de disco é opcional */ }
+  return r;
+}
+const textoOrganizar = (r) => (r.movidas ? " " + r.movidas + " legenda(s) soltas foram para a pasta \"" + NOME_BIN_LEG + "\"." : "") +
+  (r.removidas ? " " + r.removidas + " legenda(s) antiga(s) tiradas do projeto." : "") + (r.aviso ? " (" + r.aviso + ")" : "");
+
 // Cada passo roda sozinho, para o Premiere aplicar um antes de começar o outro.
 async function executar(projeto, nome, criarAcao) {
   projeto.lockedAccess(() => {
@@ -1496,18 +1587,8 @@ const legendar = (modo) => () => semPressa(async () => {
       });
       etapa = "importar as legendas";
       mostrar("Colocando " + ov.itens.length + " legendas na trilha V" + (iv + 1) + "...");
-      const raiz = await projeto.getRootItem();
       const nomeDe = (c) => c.split(/[\\/]/).pop();
-      await projeto.importFiles(ov.itens.map((x) => x.arquivo), true, raiz, false);
-      await dormir(1500);
-      let todosItens = [];
-      for (let w = 0; w < 30; w++) {
-        todosItens = await raiz.getItems();
-        const nomes = new Set(todosItens.map((it) => it.name));
-        if (ov.itens.every((x) => nomes.has(nomeDe(x.arquivo)))) break;
-        await dormir(1000);
-      }
-      const porNome = new Map(todosItens.map((it) => [it.name, it]));
+      const { porNome } = await importarLegendas(ppro, projeto, ov.itens.map((x) => x.arquivo));
       const edOv = await ppro.SequenceEditor.getEditor(seq);
       let postos = 0;
       const faltaram = [];
@@ -1521,9 +1602,11 @@ const legendar = (modo) => () => semPressa(async () => {
         postos++;
         if (i % 5 === 0) mostrar("Colocando legendas na timeline: " + (i + 1) + " de " + ov.itens.length + "...");
       }
+      let orgTxt = "";
+      try { orgTxt = textoOrganizar(await organizarLegendas(ppro, projeto, true)); } catch (e) { /* organização é opcional */ }
       mostrar("Pronto! " + postos + " legendas " + ESTILO + " na trilha V" + (iv + 1) + ". Cada legenda é um clipe: " +
         "arraste para acertar o tempo e puxe a ponta para mudar a duração.\n" +
-        "Fala lida da trilha A" + (ia + 1) + ". (Para desfazer: Ctrl+Z.)" +
+        "Fala lida da trilha A" + (ia + 1) + ". (Para desfazer: Ctrl+Z.)" + orgTxt +
         (faltaram.length ? "\nNão importadas: " + faltaram.join(", ") : ""));
       return;
     }
@@ -2305,20 +2388,17 @@ $("btnTesteModelo").addEventListener("click", async () => {
         blocos: [{ a: 0, b: Math.max(0.4, s.fim - s.ini), texto: novo }],
       });
       etapa = "importar";
-      const raiz = await s.projeto.getRootItem();
       const nn = nomeArq(ov.itens[0].arquivo);
-      await s.projeto.importFiles([ov.itens[0].arquivo], true, raiz, false);
-      let item = null;
-      for (let w = 0; w < 20 && !item; w++) {
-        await dormir(500);
-        item = (await raiz.getItems()).find((x) => x.name === nn) || null;
-      }
+      const imp = await importarLegendas(s.ppro, s.projeto, [ov.itens[0].arquivo]);
+      const item = imp.porNome.get(nn) || null;
       if (!item) throw new Error("o Premiere não importou a legenda nova");
       etapa = "trocar na timeline";
       const ed = await s.ppro.SequenceEditor.getEditor(s.seq);
       const t = await s.ppro.TickTime.createWithSeconds(s.ini);
       await executar(s.projeto, "Legenda: trocar texto", () => ed.createOverwriteItemAction(item, t, s.trilha, 0));
-      msg("Pronto: legenda trocada. (Ctrl+Z desfaz.)");
+      let org = "";
+      try { org = textoOrganizar(await organizarLegendas(s.ppro, s.projeto, true)); } catch (e) { /* opcional */ }
+      msg("Pronto: legenda trocada. (Ctrl+Z desfaz.)" + org);
     } catch (e) { msg("Erro ao " + etapa + ": " + (e && e.message ? e.message : e), true); }
   });
 })();
@@ -2436,17 +2516,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
         ov.itens.forEach((x, k) => novos.set(idx[k], x.arquivo));
       }
       etapa = "importar as legendas novas";
-      const raiz = await s.projeto.getRootItem();
-      await s.projeto.importFiles(Array.from(novos.values()), true, raiz, false);
-      await dormir(1500);
-      let todos = [];
-      for (let w = 0; w < 30; w++) {
-        todos = await raiz.getItems();
-        const nomes = new Set(todos.map((x) => x.name));
-        if (Array.from(novos.values()).every((a) => nomes.has(nomeArq(a)))) break;
-        await dormir(1000);
-      }
-      const porNome = new Map(todos.map((x) => [x.name, x]));
+      const { porNome } = await importarLegendas(s.ppro, s.projeto, Array.from(novos.values()));
       const ed = await s.ppro.SequenceEditor.getEditor(s.seq);
       let feitas = 0;
       const falhas = [];
@@ -2474,9 +2544,11 @@ $("btnTesteModelo").addEventListener("click", async () => {
         } catch (e) { falhas.push("exclusão: " + (e && e.message ? e.message : e) + " (apague na timeline com a tecla Delete)"); excluidas = 0; }
       }
       await dormir(1500);
+      let org = "";
+      try { org = textoOrganizar(await organizarLegendas(s.ppro, s.projeto, true)); } catch (e) { /* opcional */ }
       let aviso = "";
       try { await carregar(); } catch (e) { aviso = " (não consegui recarregar a lista: clique em Todas as legendas)"; }
-      msg("Pronto: " + feitas + " legenda(s) corrigida(s)" + (excluidas ? ", " + excluidas + " excluída(s)" : "") + "." + (falhas.length ? " Não trocadas (linhas): " + falhas.join(", ") + " (o clipe foi movido; carregue de novo)." : "") + " A lista foi recarregada. (Ctrl+Z desfaz.)" + aviso);
+      msg("Pronto: " + feitas + " legenda(s) corrigida(s)" + (excluidas ? ", " + excluidas + " excluída(s)" : "") + "." + (falhas.length ? " Não trocadas (linhas): " + falhas.join(", ") + " (o clipe foi movido; carregue de novo)." : "") + " A lista foi recarregada. (Ctrl+Z desfaz.)" + org + aviso);
     } catch (e) { msg("Erro ao " + etapa + ": " + (e && e.message ? e.message : e), true); }
   });
 })();
@@ -2588,4 +2660,22 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const d = await r.json();
     if ($("verPainel") && d && d.versao) $("verPainel").textContent = "v" + d.versao;
   } catch (e) { /* programa local ainda iniciando */ }
+})();
+
+// Botão: organiza o que já está no projeto (move as soltas para a pasta e tira as não usadas)
+(function () {
+  const b = $("btnOrganizarLeg");
+  if (!b) return;
+  b.addEventListener("click", () => semPressa(async () => {
+    const m = $("msgOrgLeg");
+    try {
+      const ppro = require("premierepro");
+      const projeto = await ppro.Project.getActiveProject();
+      if (m) m.textContent = "Organizando...";
+      const r = await organizarLegendas(ppro, projeto, true);
+      const txt = textoOrganizar(r).trim() || "Nada para organizar: as legendas já estão na pasta e em uso.";
+      if (m) m.textContent = txt;
+      mostrar(txt);
+    } catch (e) { if (m) m.textContent = "Erro: " + (e && e.message ? e.message : e); mostrar("Erro ao organizar as legendas: " + (e && e.message ? e.message : e), true); }
+  }));
 })();

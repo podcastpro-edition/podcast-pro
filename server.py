@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.51"
+VERSAO = "1.0.52"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1714,6 +1714,44 @@ def _registro_overlay(novos=None):
     return dados
 
 
+def limpar_overlays(em_uso, horas=24):
+    """Apaga do disco as legendas desenhadas que não estão mais no projeto (só as de mais de
+    'horas' horas, para o Ctrl+Z do Premiere ainda funcionar). Devolve quantos arquivos saíram."""
+    import time
+    raiz = os.path.join(_RAIZ, "cache", "overlays")
+    usados = {os.path.basename(str(n)) for n in (em_uso or [])}
+    apagados = []
+    limite = time.time() - horas * 3600
+    for pasta, _dirs, arquivos in os.walk(raiz):
+        for nome in arquivos:
+            if not nome.lower().endswith(".mov") or nome in usados:
+                continue
+            caminho = os.path.join(pasta, nome)
+            try:
+                if os.path.getmtime(caminho) < limite:
+                    os.remove(caminho)
+                    apagados.append(nome)
+            except OSError:
+                pass
+    for pasta, _dirs, _arq in os.walk(raiz, topdown=False):  # pastas vazias
+        if pasta != raiz:
+            try:
+                os.rmdir(pasta)
+            except OSError:
+                pass
+    if apagados:
+        arq = os.path.join(raiz, "textos.json")
+        try:
+            dados = _registro_overlay()
+            for n in apagados:
+                dados.pop(n, None)
+            with open(arq, "w", encoding="utf-8") as f:
+                json.dump(dados, f, ensure_ascii=False)
+        except Exception:
+            pass
+    return {"apagados": len(apagados)}
+
+
 def gerar_overlay(blocos, estilo, W, H, fps, saida, separado=False):
     """blocos: [(inicio, fim, texto)] em segundos (já em ordem). Gera UM vídeo .mov com transparência."""
     import tempfile
@@ -2216,6 +2254,8 @@ class Handler(BaseHTTPRequestHandler):
                         return self._responder({"erro": f"arquivo não encontrado: {o}"}, 400)
                 return self._responder(avaliar_audios(corpo.get("faixas", []), cams, corpo.get("pessoas", []), corpo.get("recorte")))
 
+            if self.path == "/legenda/limpar_disco":
+                return self._responder(limpar_overlays(corpo.get("emUso", [])))
             if self.path == "/legenda/info_lote":
                 reg = _registro_overlay()
                 return self._responder({"infos": [reg.get(os.path.basename(str(n))) for n in corpo.get("nomes", [])]})
