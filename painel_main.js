@@ -2917,14 +2917,14 @@ $("btnTesteModelo").addEventListener("click", async () => {
   }
 
   // opções de uma linha (aparecem só para a linha escolhida)
-  function opcoesLinha(l, i, semRemover) {
+  function opcoesLinha(l, i, semRemover, semPosicao) {
     const c = el("div", "ed-opc");
     c.appendChild(el("div", "rt", "Fonte")); c.lastChild.style.fontSize = "12px";
     c.appendChild(seletorFonte(l));
     c.appendChild(linha("Tamanho", stepper(l, "tam", 2, 30, 0.5, "%", 1)));
-    c.appendChild(linha("Altura na tela", stepper(l, "y", 5, 95, 1, "%")));
-    c.appendChild(linha("Posição lateral", stepper(l, "x", 10, 90, 1, "%")));
-    c.appendChild(linha("Inclinação", stepper(l, "rot", -30, 30, 1, "°")));
+    if (!semPosicao) c.appendChild(linha("Altura na tela", stepper(l, "y", 5, 95, 1, "%")));
+    if (!semPosicao) c.appendChild(linha("Posição lateral", stepper(l, "x", 10, 90, 1, "%")));
+    if (!semPosicao) c.appendChild(linha("Inclinação", stepper(l, "rot", -30, 30, 1, "°")));
     c.appendChild(linha("Tudo em MAIÚSCULAS", simNao(l, "caixa")));
     c.appendChild(el("div", "rt", "Cor do texto")); c.lastChild.style.fontSize = "12px";
     c.appendChild(campoCor(l, "cor"));
@@ -3182,6 +3182,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     fundo: { escurecer: 40, desfoque: 0, zoomLento: true, entrada: "fade", duracao: 0.6, saida: true },
     textos: [novoTexto("Frase", 7, 45, "#FFFFFF", 78), novoTexto("Referência / autor (opcional)", 4, 72, "#FFB000", 60)],
     anim: { entrada: "subir", duracao: 0.35, atraso: 0.12, saida: "fade", inicio: 0.5 },
+    area: { x: 50, y: 50, larg: 80, alt: 50 }, pag: { ativo: false, linhas: 3 }, tempos: [],
     formato: "h", guias: false, abertoT: -1, animAberta: false, io: null,
   });
   const salvarC = () => { try { localStorage.setItem("ppCriativo", JSON.stringify(Object.assign({}, C, { io: null }))); } catch (e) { /* sem armazenamento */ } };
@@ -3201,6 +3202,9 @@ $("btnTesteModelo").addEventListener("click", async () => {
       fundo: { escurecer: C.fundo.escurecer / 100, desfoque: C.fundo.desfoque, zoomLento: C.fundo.zoomLento, entrada: C.fundo.entrada, duracao: C.fundo.duracao, saida: C.fundo.saida },
       textos: C.textos.map((t) => ({ texto: t.texto, larg: t.larg / 100, linha: linhaParaDefC(t.linha) })),
       anim: { entrada: C.anim.entrada, duracao: C.anim.duracao, atraso: C.anim.atraso, saida: C.anim.saida, inicio: C.anim.inicio },
+      area: { x: C.area.x / 100, y: C.area.y / 100, larg: C.area.larg / 100, alt: C.area.alt / 100 },
+      paginas: { ativo: !!C.pag.ativo, linhas: C.pag.linhas },
+      tempos: C.tempos || [],
     };
   }
   const msgC = (t, erro) => { const m = $("crMsg"); if (m) { m.textContent = t; m.style.color = erro ? "#ff8a80" : "#9a9a9a"; } };
@@ -3295,8 +3299,16 @@ $("btnTesteModelo").addEventListener("click", async () => {
       ta.style.width = "100%"; ta.style.boxSizing = "border-box"; ta.style.backgroundColor = "#0f0f16"; ta.style.color = "#e6e6ee"; ta.style.border = "1px solid #3a3a4c"; ta.style.borderRadius = "8px"; ta.style.padding = "6px";
       ta.addEventListener("input", () => { t.texto = ta.value; agendarPreviaC(); });
       t3.appendChild(ta);
-      t3.appendChild(linha("Largura do texto na tela", stepper(t, "larg", 30, 90, 5, "%")));
-      if (C.abertoT === i) t3.appendChild(opcoesLinha(t.linha, i, true));
+      if (i === 0) {
+        t3.appendChild(linha("Entrar por partes, acompanhando a fala", bolinha(C.pag.ativo, (on) => { C.pag.ativo = on; desenharC(); agendarPreviaC(); })));
+        if (C.pag.ativo) t3.appendChild(linha("Quantas linhas por vez", stepper(C.pag, "linhas", 1, 8, 1, "")));
+        const ta2 = el("div", "rt", "Espaço do texto (retângulo verde na prévia, com as guias ligadas)"); ta2.style.fontSize = "12px"; ta2.style.marginTop = "6px"; t3.appendChild(ta2);
+        t3.appendChild(linha("Largura do espaço", stepper(C.area, "larg", 30, 90, 5, "%")));
+        t3.appendChild(linha("Altura do espaço", stepper(C.area, "alt", 10, 90, 5, "%")));
+        t3.appendChild(linha("Posição horizontal", stepper(C.area, "x", 10, 90, 1, "%")));
+        t3.appendChild(linha("Posição vertical", stepper(C.area, "y", 10, 90, 1, "%")));
+      } else t3.appendChild(linha("Largura do texto na tela", stepper(t, "larg", 30, 90, 5, "%")));
+      if (C.abertoT === i) t3.appendChild(opcoesLinha(t.linha, i, true, i === 0));
     });
     caixaC.appendChild(t3);
 
@@ -3379,7 +3391,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       else for (let i = 0; i < nA && !clipes.length; i++) { clipes = await clipesDe(i); ia = i; }
       if (!clipes.length) { msgC("Não achei áudio de fala nesse trecho. Confira a trilha de áudio da fala (aba Legendas > Avançado).", true); return; }
       clipes.sort((x, y) => x.a - y.a);
-      const partes = [];
+      const partes = [], tempos = [];
       let k = 0;
       for (const c of clipes) {
         k++;
@@ -3393,12 +3405,15 @@ $("btnTesteModelo").addEventListener("click", async () => {
         const rr = await chamar("/texto_trecho", { path: arquivo, inicio: noClipe + (a - c.a), fim: noClipe + (b - c.a),
           model: $("modelo").value, device: $("dispositivo").value, language: "pt" });
         if (rr.texto) partes.push(rr.texto);
+        for (const w of (rr.palavras || [])) tempos.push(Math.max(0, c.a + (w.s - noClipe) - ini));
       }
       const texto = partes.join(" ").replace(/\s+/g, " ").trim();
       if (!texto) { msgC("Não encontrei fala nesse trecho.", true); return; }
       C.textos[0].texto = texto;
+      C.tempos = tempos.sort((x, y) => x - y);
+      C.pag.ativo = true;
       desenharC(); agendarPreviaC();
-      msgC("Escrevi o que foi dito (trilha A" + (ia + 1) + "). Confira e corrija o texto abaixo, se precisar.");
+      msgC("Escrevi o que foi dito (trilha A" + (ia + 1) + ") e deixei o texto entrando por partes, no ritmo da fala. Confira e corrija o texto abaixo, se precisar.");
     } catch (e) { msgC("Não consegui ler a fala: " + (e && e.message ? e.message : e), true); }
   }
 

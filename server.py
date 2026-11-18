@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.72"
+VERSAO = "1.0.73"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1859,7 +1859,7 @@ _CACHE_FUNDO = {}
 
 
 def _def_criativo(d):
-    """Normaliza a definição enviada pelo painel."""
+    """Normaliza a definição enviada pelo painel. Devolve (fundo, textos, anim, extra)."""
     def num(v, lo, hi, pad):
         try:
             return max(lo, min(hi, float(v)))
@@ -1883,7 +1883,15 @@ def _def_criativo(d):
         normais.append({"texto": str(t.get("texto") or ""), "larg": num(t.get("larg"), 0.3, 0.9, 0.8), "cam": cam})
     anim = dict(camadas["anim"])
     anim["inicio"] = num((d.get("anim") or {}).get("inicio"), 0.0, 3.0, 0.5)
-    return fundo, normais, anim
+    ar = d.get("area") or {}
+    pg = d.get("paginas") or {}
+    extra = {
+        "area": {"x": num(ar.get("x"), 0.1, 0.9, 0.5), "y": num(ar.get("y"), 0.1, 0.9, 0.5),
+                 "larg": num(ar.get("larg"), 0.3, 0.9, 0.8), "alt": num(ar.get("alt"), 0.1, 0.9, 0.5)},
+        "pag": {"ativo": bool(pg.get("ativo")), "linhas": int(num(pg.get("linhas"), 1, 8, 3))},
+        "tempos": [float(x) for x in (d.get("tempos") or []) if isinstance(x, (int, float))],
+    }
+    return fundo, normais, anim, extra
 
 
 def _quebrar_texto(txt, fonte, largura):
@@ -1902,26 +1910,91 @@ def _quebrar_texto(txt, fonte, largura):
     return linhas
 
 
-def _sprites_criativo(normais, W, H):
+def _ajustar_linhas(txt, cam, W, H, larg_px, alt_px, n_ref=None):
+    """Quebra o texto na largura da área e reduz a letra até caber na altura da área."""
+    tam = max(10, int(H * cam["tam"]))
+    while True:
+        fonte = _achar_fonte(cam["f"], tam)
+        linhas = _quebrar_texto(txt, fonte, larg_px)
+        n = n_ref if n_ref else len(linhas)
+        if tam <= 12 or n * tam * 1.16 <= alt_px:
+            return linhas, tam / float(H)
+        tam = int(tam * 0.93)
+
+
+def _sprites_linhas(linhas, cam, tam_frac, cx, cy, W, H):
     sp = []
-    for t in normais:
+    n = len(linhas)
+    passo = tam_frac * 1.16
+    for k, ln in enumerate(linhas):
+        c = dict(cam)
+        c["tam"] = tam_frac
+        c["x"] = cx
+        c["y"] = cy + (k - (n - 1) / 2.0) * passo
+        c["rot"] = 0
+        c["caixa"] = False
+        sp += _sprites_legenda({"linhas": [c]}, ln, W, H)
+    return sp
+
+
+def _tempos_das_palavras(palavras, orig, ini, fim):
+    """Início de cada palavra do texto (em s desde o começo do criativo), mesmo que o texto tenha sido editado."""
+    m = len(palavras)
+    if not m:
+        return []
+    if orig:
+        n = len(orig)
+        saida = []
+        for i in range(m):
+            pos = i * n / float(m) if n != m else float(i)
+            a = min(n - 1, int(pos))
+            b = min(n - 1, a + 1)
+            f = pos - a
+            saida.append(orig[a] + (orig[b] - orig[a]) * f)
+        return saida
+    total = sum(len(p) + 1 for p in palavras)
+    acum, saida = 0, []
+    for p in palavras:
+        saida.append(ini + (fim - ini) * acum / float(total))
+        acum += len(p) + 1
+    return saida
+
+
+def _preparar_texto(normais, extra, anim, W, H, dur):
+    """Devolve (paginas, sprites_fixos). Página = {t0, t1, sp}. A 1ª caixa (frase) usa a área e pode entrar em páginas."""
+    ar, pg = extra["area"], extra["pag"]
+    paginas, fixos = [], []
+    for i, t in enumerate(normais):
         cam, txt = dict(t["cam"]), t["texto"].strip()
         if not txt:
             continue
         if cam.get("caixa"):
             txt = txt.upper()
-        cam["caixa"] = False
-        tam = max(10, int(H * cam["tam"]))
-        fonte = _achar_fonte(cam["f"], tam)
-        linhas = _quebrar_texto(txt, fonte, int(W * min(0.88, t["larg"])))
-        n = len(linhas)
-        passo = cam["tam"] * 1.16
-        for k, ln in enumerate(linhas):
-            c = dict(cam)
-            c["y"] = cam["y"] + (k - (n - 1) / 2.0) * passo
-            c["rot"] = 0
-            sp += _sprites_legenda({"linhas": [c]}, ln, W, H)
-    return sp
+        if i == 0:
+            larg_px, alt_px = int(W * min(0.9, ar["larg"]) * 0.96), int(H * ar["alt"])
+            n_ref = pg["linhas"] if pg["ativo"] else None
+            linhas, tf = _ajustar_linhas(txt, cam, W, H, larg_px, alt_px, n_ref)
+            cx, cy = ar["x"], ar["y"]
+            if not pg["ativo"]:
+                paginas.append({"t0": anim["inicio"], "t1": dur, "sp": _sprites_linhas(linhas, cam, tf, cx, cy, W, H)})
+                continue
+            grupos = [linhas[k:k + pg["linhas"]] for k in range(0, len(linhas), pg["linhas"])]
+            palavras = txt.split()
+            tempos = _tempos_das_palavras(palavras, extra["tempos"], anim["inicio"], max(anim["inicio"] + 1.0, dur - 0.5))
+            idx = 0
+            marcas = []
+            for g in grupos:
+                marcas.append(tempos[min(idx, len(tempos) - 1)] if tempos else anim["inicio"])
+                idx += sum(len(l.split()) for l in g)
+            for k, g in enumerate(grupos):
+                t0 = max(anim["inicio"] if k == 0 else 0.0, marcas[k] - 0.12)
+                t1 = max(t0 + 0.4, (marcas[k + 1] - 0.12) if k + 1 < len(grupos) else dur)
+                paginas.append({"t0": t0, "t1": t1, "sp": _sprites_linhas(g, cam, tf, cx, cy, W, H)})
+        else:
+            tam = max(10, int(H * cam["tam"]))
+            linhas = _quebrar_texto(txt, _achar_fonte(cam["f"], tam), int(W * min(0.88, t["larg"])))
+            fixos += _sprites_linhas(linhas, cam, cam["tam"], cam.get("x", 0.5), cam["y"], W, H)
+    return paginas, fixos
 
 
 def _fundo_base(fundo, W, H):
@@ -1993,26 +2066,31 @@ def _quadro_fundo(base, W, H, t, dur, f):
     return img
 
 
-def _quadro_criativo(base, sprites, anim, fundo, W, H, t, dur):
+def _quadro_criativo(base, paginas, fixos, anim, fundo, W, H, t, dur):
     quadro = _quadro_fundo(base, W, H, t, dur, fundo).copy()
-    t_tx = anim["inicio"]
-    if sprites and t >= t_tx - 1e-6:
-        quadro.alpha_composite(_quadro_legenda(sprites, W, H, t - t_tx, max(0.1, dur - t_tx), anim))
+    if fixos and t >= anim["inicio"] - 1e-6:
+        quadro.alpha_composite(_quadro_legenda(fixos, W, H, t - anim["inicio"], max(0.1, dur - anim["inicio"]), anim))
+    for pgn in paginas:
+        if pgn["t0"] - 1e-6 <= t < pgn["t1"]:
+            quadro.alpha_composite(_quadro_legenda(pgn["sp"], W, H, t - pgn["t0"], pgn["t1"] - pgn["t0"], anim))
+            break
     return quadro
 
 
 def criativo_previa(d, saida_png, vertical=False):
+    from PIL import Image, ImageDraw
     W, H = (540, 960) if vertical else (960, 540)
-    fundo, normais, anim = _def_criativo(d)
+    fundo, normais, anim, extra = _def_criativo(d)
     base = _fundo_base(fundo, W, H)
-    sp = _sprites_criativo(normais, W, H)
+    paginas, fixos = _preparar_texto(normais, extra, anim, W, H, 60.0)
     quadro = _quadro_fundo(base, W, H, 99.0, 1e6, fundo).copy()
-    if sp:
-        quadro.alpha_composite(_quadro_legenda(sp, W, H, 99.0, 1e6, anim))
-    fundo_ = __import__("PIL.Image", fromlist=["Image"]).new("RGBA", (W, H), (36, 36, 52, 255))
+    if fixos:
+        quadro.alpha_composite(_quadro_legenda(fixos, W, H, 99.0, 1e6, anim))
+    if paginas:
+        quadro.alpha_composite(_quadro_legenda(paginas[0]["sp"], W, H, 99.0, 1e6, anim))
+    fundo_ = Image.new("RGBA", (W, H), (36, 36, 52, 255))
     fundo_.alpha_composite(quadro)
     if d.get("guias"):
-        from PIL import ImageDraw
         g = fundo_.copy()
         dg = ImageDraw.Draw(g)
         dg.rectangle((0, 0, W - 1, H - 1), outline=(255, 255, 255, 255), width=2)
@@ -2020,6 +2098,9 @@ def criativo_previa(d, saida_png, vertical=False):
         dg.rectangle((mx, my, W - mx, H - my), outline=(255, 214, 0, 255), width=2)
         dg.line((W // 2, 0, W // 2, H), fill=(0, 220, 255, 255), width=2)
         dg.line((0, H // 2, W, H // 2), fill=(0, 220, 255, 255), width=2)
+        ar = extra["area"]  # área do texto
+        dg.rectangle((W * (ar["x"] - ar["larg"] / 2), H * (ar["y"] - ar["alt"] / 2), W * (ar["x"] + ar["larg"] / 2), H * (ar["y"] + ar["alt"] / 2)),
+                     outline=(80, 255, 140, 255), width=3)
         fundo_ = g
     os.makedirs(os.path.dirname(saida_png), exist_ok=True)
     fundo_.convert("RGB").save(saida_png)
@@ -2030,26 +2111,16 @@ def criativo_gerar(d, W, H, fps, dur, saida):
     W, H = int(W) // 2 * 2, int(H) // 2 * 2
     fps = float(fps)
     dur = max(0.5, float(dur))
-    fundo, normais, anim = _def_criativo(d)
+    fundo, normais, anim, extra = _def_criativo(d)
     base = _fundo_base(fundo, W, H)
-    sp = _sprites_criativo(normais, W, H)
+    paginas, fixos = _preparar_texto(normais, extra, anim, W, H, dur)
     n = max(2, int(round(dur * fps)))
     os.makedirs(os.path.dirname(saida), exist_ok=True)
     p = subprocess.Popen(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba",
                           "-s", "%dx%d" % (W, H), "-r", str(fps), "-i", "-", "-c:v", "qtrle", "-pix_fmt", "argb", saida],
                          stdin=subprocess.PIPE)
-    t_ent = max(fundo["duracao"] if fundo["entrada"] != "nenhuma" else 0.0,
-                anim["inicio"] + (_tempo_entrada(anim, len(sp)) if sp else 0.0)) + 0.05
-    estatico = None
     for k in range(n):
-        t = k / fps
-        parado = (not fundo["zoomLento"]) and t > t_ent and t < dur - 0.4
-        if parado:
-            if estatico is None:
-                estatico = _quadro_criativo(base, sp, anim, fundo, W, H, t_ent + 0.1, 1e6).tobytes()
-            p.stdin.write(estatico)
-        else:
-            p.stdin.write(_quadro_criativo(base, sp, anim, fundo, W, H, t, dur).tobytes())
+        p.stdin.write(_quadro_criativo(base, paginas, fixos, anim, fundo, W, H, k / fps, dur).tobytes())
     p.stdin.close()
     if p.wait() != 0:
         raise RuntimeError("O ffmpeg falhou ao desenhar o criativo.")
@@ -2060,7 +2131,8 @@ def texto_do_trecho(caminho, inicio, fim, modelo, dispositivo, idioma):
     cache, n, _ = palavras_do_trecho(caminho, inicio, fim, modelo, dispositivo, idioma)
     with open(cache, encoding="utf-8") as f:
         palavras = json.load(f)
-    return " ".join(p["w"] for p in palavras if p["s"] >= inicio - 0.3 and p["e"] <= fim + 0.3).strip()
+    uteis = [p for p in palavras if p["s"] >= inicio - 0.3 and p["e"] <= fim + 0.3]
+    return {"texto": " ".join(p["w"] for p in uteis).strip(), "palavras": [{"w": p["w"], "s": p["s"], "e": p["e"]} for p in uteis]}
 
 
 def _png_conta_gotas(tam=32):
@@ -2846,9 +2918,9 @@ class Handler(BaseHTTPRequestHandler):
                                                       corpo.get("fps", 30), corpo.get("dur", 5),
                                                       os.path.join(_RAIZ, "cache", "criativos", nome)))
             if self.path == "/texto_trecho":
-                return self._responder({"texto": texto_do_trecho(
+                return self._responder(texto_do_trecho(
                     caminho, float(corpo.get("inicio", 0)), float(corpo.get("fim", 60)),
-                    corpo.get("model", "small"), corpo.get("device", "cpu"), corpo.get("language", "pt"))})
+                    corpo.get("model", "small"), corpo.get("device", "cpu"), corpo.get("language", "pt")))
 
             if self.path == "/avaliar_audios":
                 cams = corpo.get("cameras") or {}

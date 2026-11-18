@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.72",
-  "notas": "Nova aba Criativos: imagem de fundo + frases animadas no IN/OUT, com texto adiantado pela fala",
+  "versao": "1.0.73",
+  "notas": "Criativos: texto entra por partes no ritmo da fala e espaco (largura/altura) do texto com guia",
   "arquivos": {
-    "server.py": "c97e8c49a7bb105b13bff6b0198bebbea69e7fa44ff7c49ea6485b98a016c26f",
+    "server.py": "7638c6fedde62643f1e653ba278f5b4b6ed4fd5107d949c41b116f6dfdf6767a",
     "painel_index.html": "8047257fa07f96053888c693812b2c4eefbdc67bc9ef473f8422252a9f6bc847",
-    "painel_main.js": "23b1cd4ca4a2b897384f56e0562017a593f8fd9099678c697b9d8215ea086bf0",
+    "painel_main.js": "5a32d60e8341d7391b8c4b1558f7f593e5098988e009782cc2cb5feb3f6d5176",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",
