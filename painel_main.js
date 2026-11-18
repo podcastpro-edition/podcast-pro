@@ -573,6 +573,7 @@ $("btnDiagnostico").addEventListener("click", async () => {
 let PODCAST_BASE_WAV = null; // 1ª trilha do arquivo multicanal dos microfones (descoberta na sequência)
 // ---- Participantes e apresentadores: caixas que o usuário escreve e vai somando com "+" ----
 const LINHAS = { ap: [], pt: [] };
+let AUTO = null; // resultado da escolha automática de áudio (só durante uma montagem)
 const LIMITE = { ap: 4, pt: 8 };
 const rotuloAudio = (i) => "A" + (i + 1);
 
@@ -599,11 +600,12 @@ function criarLinha(grupo, nome, cam, aud) {
   const sc = document.createElement("select");
   for (const v of ["V1", "V2", "V3", "V4"]) { const o = document.createElement("option"); o.value = v; o.textContent = v; sc.appendChild(o); }
   const sa = document.createElement("select");
+  { const o = document.createElement("option"); o.value = "-2"; o.textContent = "Automático"; sa.appendChild(o); }
   { const o = document.createElement("option"); o.value = "-1"; o.textContent = "Voz única"; sa.appendChild(o); }
   for (let i = 0; i < 12; i++) { const o = document.createElement("option"); o.value = String(i); o.textContent = rotuloAudio(i); sa.appendChild(o); }
   const usadas = LINHAS.ap.concat(LINHAS.pt).map((l) => parseInt(l.aud.value, 10)).filter((n) => n >= 0);
   sc.value = cam || (grupo === "ap" ? "V2" : "V3");
-  sa.value = String(aud !== undefined ? aud : Math.min(11, usadas.length ? Math.max(...usadas) + 1 : 3));
+  sa.value = String(aud !== undefined ? aud : -2);
   const obj = { grupo, linha, nome: campo, cam: sc, aud: sa };
   linha.appendChild(campo); linha.appendChild(sc); linha.appendChild(sa);
   const x = document.createElement("div");
@@ -631,8 +633,13 @@ function lerPessoas() {
       while (vistos.has(nome)) nome = base + " " + k++;
       vistos.add(nome);
       const aud = parseInt(l.aud.value, 10);
-      const vozUnica = aud < 0; // "Voz única": todos gravados juntos numa trilha só
-      pessoas.push({ nome, trilhaAudio: vozUnica ? 0 : (aud || 0), camera: l.cam.value, vozUnica });
+      let vozUnica = aud === -1; // "Voz única": todos gravados juntos numa trilha só
+      let trilhaAudio = aud >= 0 ? aud : 0;
+      if (aud === -2) { // "Automático": usa o que a análise escolheu (se já rodou)
+        if (AUTO && AUTO.vozUnica) { vozUnica = true; trilhaAudio = AUTO.trilha; }
+        else if (AUTO && AUTO.mapa && AUTO.mapa[base] !== undefined) trilhaAudio = AUTO.mapa[base];
+      }
+      pessoas.push({ nome, trilhaAudio, camera: l.cam.value, vozUnica, auto: aud === -2 });
       if (g === "ap") apresentadores.push(nome);
     }
   }
@@ -655,8 +662,8 @@ const PODCAST = {
 
 (function () {
   if (!$("menuPartic")) return;
-  criarLinha("ap", "Apresentador", "V2", 0); // valores iniciais (projeto do Danilo)
-  criarLinha("pt", "Participante 01", "V3", 1);
+  criarLinha("ap", "Apresentador", "V2"); // áudio "Automático": o painel escolhe a melhor trilha
+  criarLinha("pt", "Participante 01", "V3");
   if ($("pGeral")) $("pGeral").value = "V1";
   $("btnMaisApres").addEventListener("click", () => criarLinha("ap"));
   $("btnMaisPart").addEventListener("click", () => criarLinha("pt"));
@@ -742,11 +749,68 @@ $("btnPodcast").addEventListener("click", () => semPressa(async () => {
   }
 }));
 
+// "Automático": olha todas as trilhas de áudio da sequência, descarta o que é ambiente de câmera,
+// efeitos e trilhas vazias, e escolhe os microfones de cada pessoa (ou a trilha master).
+// Nada é apagado: o que não for usado fica só silenciado na sequência nova.
+async function garantirAudio(ppro, sequencia) {
+  if (AUTO) return;
+  const alvo = lerPessoas().pessoas.filter((p) => p.auto);
+  if (!alvo.length) return;
+  mostrar("Analisando as trilhas de áudio para escolher a melhor...\n(pode levar uns 30 segundos; não mexa no Premiere)");
+  const nA = await sequencia.getAudioTrackCount();
+  const faixas = [];
+  for (let i = 0; i < nA; i++) {
+    try { faixas.push({ trilha: i, path: await caminhoDaTrilha(ppro, sequencia, "A", i) }); } catch (e) { /* trilha vazia */ }
+  }
+  const cameras = {};
+  for (const v of camerasUsadas()) cameras[v] = await caminhoDaTrilha(ppro, sequencia, "V", parseInt(v.slice(1), 10) - 1);
+  const r = await chamar("/avaliar_audios", { faixas, cameras, pessoas: alvo.map((p) => ({ nome: p.nome, camera: p.camera })) });
+  const rot = (i) => "A" + (i + 1);
+  if (!r.modo) throw new Error("Não achei nenhuma trilha de áudio com fala na sequência.");
+  const cobertura = {};
+  for (const f of r.faixas) cobertura[f.trilha] = f.cobertura;
+  const resumo = r.faixas.filter((f) => f.tipo !== "vazia").map((f) => rot(f.trilha) + ": " + f.tipo).join(", ");
+  if (r.modo === "voz_unica") {
+    AUTO = { vozUnica: true, trilha: r.escolha.trilha };
+    mostrar("Áudio escolhido: " + rot(r.escolha.trilha) + " (trilha única).\nTrilhas analisadas: " + resumo);
+    return;
+  }
+  const mapa = Object.assign({}, r.escolha);
+  if (!r.confiavel) {
+    const livres = r.mics.slice();
+    let usouMaster = false;
+    for (const p of alvo) {
+      if (livres.length === 1) { mapa[p.nome] = livres[0]; break; }
+      const palpite = r.escolha[p.nome];
+      const escolhido = await new Promise((resolve) => {
+        const botoes = livres.map((tr) => ({
+          rotulo: (tr === palpite ? "★ " : "") + rot(tr) + " (fala " + Math.round((cobertura[tr] || 0) * 100) + "% do tempo)",
+          cor: "azul", acao: () => resolve(tr),
+        }));
+        if (r.master !== null) botoes.push({ rotulo: "Usar a trilha master (" + rot(r.master) + "), todos juntos", cor: "verde", acao: () => resolve(-1) });
+        popup("Qual é o microfone de " + p.nome + "?",
+          "Não tive certeza de qual trilha é de cada pessoa. A estrela marca o meu palpite." + (r.master !== null ? " Se preferir, use a trilha master (todas as vozes misturadas); aí eu separo as vozes sozinho." : ""),
+          botoes);
+      });
+      if (escolhido === -1) { usouMaster = true; break; }
+      mapa[p.nome] = escolhido;
+      livres.splice(livres.indexOf(escolhido), 1);
+    }
+    if (usouMaster) {
+      AUTO = { vozUnica: true, trilha: r.master };
+      mostrar("Áudio escolhido: " + rot(r.master) + " (master).");
+      return;
+    }
+  }
+  AUTO = { mapa };
+  mostrar("Microfones escolhidos: " + Object.entries(mapa).map(([n, tr]) => n + " = " + rot(tr)).join(", ") + "\nTrilhas analisadas: " + resumo);
+}
+
 // Trilha única: separa as vozes sozinho; se não tiver certeza de quem é quem, pergunta.
 async function resolverVozes(ppro, sequencia, wav, cameras) {
   const pess = PODCAST.pessoas.map((p) => ({ nome: p.nome, camera: p.camera }));
   mostrar("Separando as vozes da trilha única...\n(pode levar um minuto; não mexa no Premiere)");
-  const r = await chamar("/vozes", { path: wav, cameras, pessoas: pess, n: pess.length });
+  const r = await chamar("/vozes", { path: wav, canal: PODCAST.pessoas[0].canal, cameras, pessoas: pess, n: pess.length });
   const mapa = Object.assign({}, r.mapa);
   if (!r.confiavel) {
     const livres = pess.map((p) => p.nome);
@@ -785,6 +849,11 @@ async function resolverVozes(ppro, sequencia, wav, cameras) {
 // --- Podcast: monta a sequência (câmeras sincronizadas + cortes) -------------
 // limite = até quantos segundos da sequência nova montar (Infinity = tudo).
 async function montarPodcast(limite, opcoes = {}) {
+  const tinha = !!AUTO;
+  try { return await montarPodcastInterno(limite, opcoes); } finally { if (!tinha) AUTO = null; }
+}
+
+async function montarPodcastInterno(limite, opcoes = {}) {
   let etapa = "começando";
   try {
     const ppro = require("premierepro");
@@ -792,6 +861,8 @@ async function montarPodcast(limite, opcoes = {}) {
     const origem = await projeto.getActiveSequence();
     if (!origem) return mostrar("Nenhuma sequência ativa.", true);
 
+    etapa = "escolher o melhor áudio";
+    await garantirAudio(ppro, origem);
     etapa = "ler os arquivos da sequência";
     const wav = await wavDoPodcast(ppro, origem);
     const cameras = {};
@@ -1006,6 +1077,8 @@ async function fluxoPodcastCompleto() {
     mostrar("Passo 1 de 2: conferindo a sincronia das câmeras com o áudio...\n(uns 20 segundos; não mexa no Premiere)");
     let wav;
     try {
+      AUTO = null;
+      await garantirAudio(ppro, origem);
       wav = await wavDoPodcast(ppro, origem);
     } catch (e) {
       const m = String(e && e.message ? e.message : e);
@@ -1039,6 +1112,8 @@ async function fluxoPodcastCompleto() {
       [{ rotulo: "Refinar cortes", cor: "azul", acao: abrirParticipantes }, { rotulo: "Está bom assim", cor: "verde" }]);
   } catch (e) {
     mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
+  } finally {
+    AUTO = null;
   }
 }
 $("btnPodcastTudo").addEventListener("click", () => semPressa(fluxoPodcastCompleto));
@@ -1051,6 +1126,8 @@ $("btnLegendasPodcast").addEventListener("click", () => semPressa(async () => {
     const projeto = await ppro.Project.getActiveProject();
     const sequencia = await projeto.getActiveSequence();
     if (!sequencia) return mostrar("Nenhuma sequência ativa.", true);
+    AUTO = null;
+    await garantirAudio(ppro, sequencia);
     const wav = await wavDoPodcast(ppro, sequencia);
 
     const inicio = Date.now();
@@ -1638,6 +1715,8 @@ $("btnVertical").addEventListener("click", () => semPressa(async () => {
     if (!origem) return mostrar("Nenhuma sequência ativa (deixe a PODCAST ativa).", true);
 
     etapa = "ler os arquivos da sequência (deixe a PODCAST ativa)";
+    AUTO = null;
+    await garantirAudio(ppro, origem);
     const wav = await wavDoPodcast(ppro, origem);
     const cameras = {};
     for (const v of camerasUsadas()) cameras[v] = await caminhoDaTrilha(ppro, origem, "V", parseInt(v.slice(1), 10) - 1);

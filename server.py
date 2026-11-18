@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.44"
+VERSAO = "1.0.45"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -420,13 +420,13 @@ def _kmeans(X, k, tentativas=8, semente=1):
     return melhor
 
 
-def vozes_na_trilha(caminho, n_vozes, duracao_minima=1.5, taxa=16000, janela=1.2, passo=0.6):
+def vozes_na_trilha(caminho, n_vozes, duracao_minima=1.5, taxa=16000, janela=1.2, passo=0.6, canal=None):
     """Separa as vozes de uma trilha só pelo timbre e pela altura da voz.
     Devolve {"trechos":[{ini,fim,voz}], "tempo":{voz:segundos}, "janela":0.1}.
     As vozes são numeradas 0..n-1 na ordem em que aparecem."""
     import numpy as np
 
-    x = ler_canal(caminho, None, taxa)
+    x = ler_canal(caminho, canal, taxa)
     coef, energia = _mfcc(x, taxa)
     if len(coef) == 0:
         raise RuntimeError("áudio curto demais para separar as vozes")
@@ -564,6 +564,127 @@ def ligar_vozes_as_pessoas(res_vozes, wav, pessoas, cameras):
     resposta["confiavel"] = bool(unicas and fortes and margem > 0.25 and quantas == len(pessoas))
     resposta["margem"] = round(float(margem), 2)
     return resposta
+
+
+# ----------------------------------------- escolher sozinho o melhor áudio da sequência
+
+def avaliar_audios(faixas, cameras, pessoas):
+    """faixas: [{trilha, path}] (uma por trilha de áudio da sequência, 0 = A1).
+    cameras: {"V1": caminho}. pessoas: [{nome, camera}].
+    Classifica cada trilha (câmera/ambiente, vazia, efeitos, master, microfone) e propõe:
+    - modo "microfones": um microfone por pessoa (ligado pela câmera em que ela aparece), ou
+    - modo "voz_unica": usar a trilha master (ou a melhor trilha com fala)."""
+    import numpy as np
+    from itertools import permutations
+
+    norm = lambda c: os.path.normcase(os.path.abspath(c))
+    de_camera = {norm(c) for c in cameras.values()}
+    grupos, canal_de = {}, {}
+    for f in faixas:
+        lista = grupos.setdefault(norm(f["path"]), [])
+        canal_de[f["trilha"]] = len(lista)
+        lista.append(f["trilha"])
+
+    info, envs = [], {}
+    for f in faixas:
+        t = f["trilha"]
+        item = {"trilha": t, "path": f["path"], "canal": canal_de[t]}
+        if norm(f["path"]) in de_camera:
+            item["tipo"] = "camera"
+            info.append(item)
+            continue
+        try:
+            e = envelope_db(ler_canal(f["path"], canal_de[t], 8000, 0, 600), 8000, 0.1)
+        except Exception:
+            item["tipo"] = "vazia"
+            info.append(item)
+            continue
+        chao = float(np.percentile(e, 10))
+        topo = float(np.percentile(e, 95))
+        limiar = min(chao + 12, topo - 12)  # fala contínua (sem pausas) também conta como fala
+        item["nivel"] = round(topo, 1)
+        item["cobertura"] = round(float((e > limiar).mean()), 3)
+        if item["nivel"] < -50:
+            item["tipo"] = "vazia"
+        elif item["cobertura"] < 0.15:
+            item["tipo"] = "efeitos"
+        else:
+            item["tipo"] = "fala"
+            envs[t] = (e, limiar)
+        info.append(item)
+
+    falas = [i for i in info if i["tipo"] == "fala"]
+    master = None
+    if len(falas) >= 3:
+        for cand in sorted(falas, key=lambda i: -i["cobertura"]):
+            outros = [i for i in falas if i is not cand]
+            n = min(len(envs[i["trilha"]][0]) for i in falas)
+            ativo = lambda i: envs[i["trilha"]][0][:n] > envs[i["trilha"]][1]
+            uniao = np.zeros(n, dtype=bool)
+            for o in outros:
+                uniao |= ativo(o)
+            if uniao.any() and ativo(cand)[uniao].mean() >= 0.85 and \
+               cand["cobertura"] >= 1.1 * max(o["cobertura"] for o in outros):
+                master = cand
+                break
+    if master:
+        master["tipo"] = "master"
+    mics = [i for i in falas if i is not master]
+    for m in mics:
+        m["tipo"] = "microfone"
+
+    res = {"faixas": [{k: v for k, v in i.items() if k != "path"} for i in info],
+           "master": master["trilha"] if master else None,
+           "mics": [m["trilha"] for m in mics], "modo": None, "escolha": {}, "confiavel": False}
+    n_pessoas = len(pessoas)
+
+    if len(mics) >= max(2, n_pessoas) and n_pessoas >= 1:
+        if n_pessoas == 1:
+            melhor = max(mics, key=lambda m: m["cobertura"])
+            res.update(modo="microfones", escolha={pessoas[0]["nome"]: melhor["trilha"]}, confiavel=True)
+            return res
+        # liga cada pessoa a um microfone: o microfone domina quando a pessoa fala
+        # e a câmera dela capta mais som nesse momento
+        cams = sorted({p["camera"] for p in pessoas if p["camera"] in cameras})
+        n = min(len(envs[m["trilha"]][0]) for m in mics)
+        pontos = {}
+        try:
+            ref = next(i["path"] for i in info if i["trilha"] == mics[0]["trilha"])
+            lags = deslocamentos(ref, [cameras[c] for c in cams])
+            base = {}
+            for c, (lag, _) in zip(cams, lags):
+                e = envelope_db(ler_canal(cameras[c], None, 8000), 8000, 0.1)
+                e = np.roll(e, -int(round(lag / 0.1)))
+                e = e[:n] if len(e) >= n else np.pad(e, (0, n - len(e)), constant_values=e.min())
+                base[c] = (e - e.mean()) / (e.std() + 1e-6)
+            matriz = np.vstack([envs[m["trilha"]][0][:n] for m in mics])
+            for mi, m in enumerate(mics):
+                outros_max = np.max(np.delete(matriz, mi, axis=0), axis=0) if len(mics) > 1 else np.full(n, -200.0)
+                dom = (matriz[mi] > envs[m["trilha"]][1]) & (matriz[mi] - outros_max > 6)
+                for c in cams:
+                    pontos[(mi, c)] = float(base[c][dom].mean() - base[c][~dom].mean()) if dom.any() and (~dom).any() else 0.0
+        except Exception:
+            pontos = {}
+        quantas = min(len(mics), n_pessoas)
+        melhores = []
+        for perm in permutations(range(len(mics)), quantas):  # perm[k] = microfone da pessoa k
+            tot = sum(pontos.get((perm[k], pessoas[k]["camera"]), 0.0) for k in range(quantas))
+            melhores.append((tot, perm))
+        melhores.sort(key=lambda z: -z[0])
+        tot1, perm1 = melhores[0]
+        tot2 = melhores[1][0] if len(melhores) > 1 else tot1 - 1
+        cam_unicas = len({p["camera"] for p in pessoas}) == n_pessoas
+        fortes = bool(pontos) and all(pontos.get((perm1[k], pessoas[k]["camera"]), 0.0) > 0.15 for k in range(quantas))
+        margem = (tot1 - tot2) / (abs(tot1) + 1e-6)
+        res["modo"] = "microfones"
+        res["escolha"] = {pessoas[k]["nome"]: mics[perm1[k]]["trilha"] for k in range(quantas)}
+        res["confiavel"] = bool(cam_unicas and fortes and margem > 0.25 and quantas == n_pessoas)
+        return res
+
+    unica = master or (max(falas, key=lambda i: i["cobertura"]) if falas else None)
+    if unica:
+        res.update(modo="voz_unica", escolha={"trilha": unica["trilha"]}, confiavel=True)
+    return res
 
 
 def deslocamentos(ref, outros, duracao=600, maximo=30.0):
@@ -1765,6 +1886,13 @@ class Handler(BaseHTTPRequestHandler):
                                                      os.path.join(pasta_ov, nome_ov),
                                                      bool(corpo.get("separado", False))))
 
+            if self.path == "/avaliar_audios":
+                cams = corpo.get("cameras") or {}
+                for o in list(cams.values()) + [f["path"] for f in corpo.get("faixas", [])]:
+                    if not os.path.isfile(o):
+                        return self._responder({"erro": f"arquivo não encontrado: {o}"}, 400)
+                return self._responder(avaliar_audios(corpo.get("faixas", []), cams, corpo.get("pessoas", [])))
+
             if self.path == "/legenda/info_lote":
                 reg = _registro_overlay()
                 return self._responder({"infos": [reg.get(os.path.basename(str(n))) for n in corpo.get("nomes", [])]})
@@ -1856,7 +1984,8 @@ class Handler(BaseHTTPRequestHandler):
                     if not os.path.isfile(o):
                         return self._responder({"erro": f"arquivo não encontrado: {o}"}, 400)
                 pessoas = corpo.get("pessoas") or []
-                res = vozes_na_trilha(caminho, max(1, int(corpo.get("n") or len(pessoas) or 2)))
+                res = vozes_na_trilha(caminho, max(1, int(corpo.get("n") or len(pessoas) or 2)),
+                                      canal=corpo.get("canal"))
                 lig = ligar_vozes_as_pessoas(res, caminho, pessoas, cams)
                 return self._responder({"trechos": res["trechos"], "tempo": res["tempo"],
                                         "mapa": {str(k): v for k, v in lig["mapa"].items()},
