@@ -6,6 +6,36 @@ const status = $("status");
 function mostrar(texto, erro = false) {
   status.textContent = texto;
   status.className = erro ? "erro" : "";
+  if (CARREGANDO.ativo && $("carregandoTexto")) $("carregandoTexto").textContent = String(texto).split("\n")[0].slice(0, 90);
+}
+
+// Indicador "carregando" no topo (a janela de informações fica embaixo).
+const CARREGANDO = { ativo: false, timer: null, pos: 0 };
+function carregando(ligar, erro) {
+  const caixa = $("carregando"), barra = $("carregandoBarra"), txt = $("carregandoTexto");
+  if (!caixa) return;
+  if (ligar) {
+    CARREGANDO.ativo = true;
+    caixa.style.display = "block";
+    barra.style.backgroundColor = "#ff6a2b";
+    barra.style.width = "25%";
+    txt.textContent = "Trabalhando... não mexa no Premiere.";
+    if (CARREGANDO.timer) clearInterval(CARREGANDO.timer);
+    CARREGANDO.pos = 0;
+    CARREGANDO.timer = setInterval(() => {
+      CARREGANDO.pos = (CARREGANDO.pos + 3) % 150;
+      const p = CARREGANDO.pos <= 75 ? CARREGANDO.pos : 150 - CARREGANDO.pos; // vai e volta
+      barra.style.marginLeft = p + "%";
+    }, 70);
+  } else {
+    CARREGANDO.ativo = false;
+    if (CARREGANDO.timer) { clearInterval(CARREGANDO.timer); CARREGANDO.timer = null; }
+    barra.style.marginLeft = "0%";
+    barra.style.width = "100%";
+    const falhou = status.className === "erro";
+    barra.style.backgroundColor = falhou ? "#c0392b" : "#2e7d4f";
+    txt.textContent = falhou ? "✖ Deu erro. Toque aqui para ver as informações (embaixo)." : "✔ Terminou. Toque aqui para ver as informações (embaixo).";
+  }
 }
 
 async function chamar(rota, corpo) {
@@ -476,7 +506,8 @@ let ocupado = false;
 async function semPressa(tarefa) {
   if (ocupado) return mostrar("Ainda estou trabalhando. Espere terminar.", true);
   ocupado = true;
-  try { await tarefa(); } finally { ocupado = false; }
+  carregando(true);
+  try { await tarefa(); } finally { ocupado = false; carregando(false); }
 }
 
 $("btnCortarTudo").addEventListener("click", () => semPressa(async () => {
@@ -646,6 +677,28 @@ function lerPessoas() {
   return { pessoas, apresentadores };
 }
 
+// Pergunta se quer adicionar as pessoas que faltam (mais vozes/microfones do que linhas escritas).
+const PARAR_FLUXO = new Error("Escolha a câmera da pessoa nova em \"Selecionar participantes e apresentador\" e clique em Montar de novo.");
+function perguntarPessoasFaltando(achadas, escritas, o_que) {
+  const faltam = achadas - escritas;
+  return new Promise((resolve) => {
+    popup("Achei " + achadas + " " + o_que + ", mas só " + escritas + " pessoas estão escritas",
+      "Sem a pessoa na lista, ela não aparece nos cortes de câmera. Adicione " + (faltam === 1 ? "a pessoa que falta" : "as " + faltam + " pessoas que faltam") + " e escolha a câmera dela em \"Selecionar participantes e apresentador\"; depois clique em Montar de novo.",
+      [{ rotulo: "Adicionar e escolher a câmera", cor: "azul", acao: () => {
+          const usadas = new Set(lerPessoas().pessoas.map((p) => p.camera));
+          usadas.add($("pGeral") ? $("pGeral").value : "V1");
+          for (let k = 0; k < faltam; k++) {
+            const cam = ["V1", "V2", "V3", "V4"].find((v) => !usadas.has(v)) || "V4";
+            usadas.add(cam);
+            criarLinha("pt", undefined, cam);
+          }
+          abrirParticipantes();
+          resolve(true);
+        } },
+       { rotulo: "Continuar só com " + escritas, acao: () => resolve(false) }]);
+  });
+}
+
 const PODCAST = {
   get pessoas() {
     const { pessoas } = lerPessoas();
@@ -787,8 +840,12 @@ async function garantirAudio(ppro, sequencia) {
   for (const v of camerasUsadas()) cameras[v] = await caminhoDaTrilha(ppro, sequencia, "V", parseInt(v.slice(1), 10) - 1);
   const palpite0 = faixas.find((f) => !Object.values(cameras).includes(f.path));
   const recorte = palpite0 ? await recorteDaTrilha(ppro, sequencia, palpite0.trilha) : null;
-  const r = await chamar("/avaliar_audios", { faixas, cameras, recorte, pessoas: alvo.map((p) => ({ nome: p.nome, camera: p.camera })) });
+  const r0 = await chamar("/avaliar_audios", { faixas, cameras, recorte, pessoas: alvo.map((p) => ({ nome: p.nome, camera: p.camera })) });
+  const r = r0;
   const rot = (i) => "A" + (i + 1);
+  if (r.modo === "microfones" && r.mics.length > lerPessoas().pessoas.length) {
+    if (await perguntarPessoasFaltando(r.mics.length, lerPessoas().pessoas.length, "microfones com fala")) throw PARAR_FLUXO;
+  }
   if (!r.modo) throw new Error("Não achei nenhuma trilha de áudio com fala na sequência.");
   const cobertura = {};
   for (const f of r.faixas) cobertura[f.trilha] = f.cobertura;
@@ -834,6 +891,9 @@ async function resolverVozes(ppro, sequencia, wav, cameras, recorte) {
   const pess = PODCAST.pessoas.map((p) => ({ nome: p.nome, camera: p.camera }));
   mostrar("Separando as vozes da trilha única...\n(pode levar um minuto; não mexa no Premiere)");
   const r = await chamar("/vozes", { path: wav, canal: PODCAST.pessoas[0].canal, recorte, cameras, pessoas: pess, n: pess.length });
+  if (r.kSugerido && r.kSugerido > pess.length) {
+    if (await perguntarPessoasFaltando(r.kSugerido, pess.length, "vozes diferentes")) throw PARAR_FLUXO;
+  }
   const mapa = Object.assign({}, r.mapa);
   if (!r.confiavel) {
     const livres = pess.map((p) => p.nome);
@@ -1065,7 +1125,7 @@ async function montarPodcastInterno(limite, opcoes = {}) {
       (avisos.length ? "\nAVISOS:\n- " + avisos.join("\n- ") : "\nSem avisos.") + "\n" + linhas.join("\n"));
     return true;
   } catch (e) {
-    mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
+    if (e === PARAR_FLUXO) mostrar(e.message); else mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
   }
 }
 
@@ -1149,7 +1209,7 @@ async function fluxoPodcastCompleto() {
       resumoSync + " Os cortes foram feitos automaticamente. Quer refinar mais? Em \"Selecionar participantes e apresentador\" você muda quem é apresentador e quanto a imagem dele é priorizada; depois clique em \"Montar podcast completo\" de novo.",
       [{ rotulo: "Refinar cortes", cor: "azul", acao: abrirParticipantes }, { rotulo: "Está bom assim", cor: "verde" }]);
   } catch (e) {
-    mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
+    if (e === PARAR_FLUXO) mostrar(e.message); else mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
   } finally {
     AUTO = null;
   }
@@ -2486,4 +2546,9 @@ $("btnTesteModelo").addEventListener("click", async () => {
     document.documentElement.scrollTop = 0; document.body.scrollTop = 0;
     setTimeout(atualizar, 50);
   });
+})();
+
+(function () {
+  const c = $("carregando");
+  if (c) c.addEventListener("click", () => { try { status.scrollIntoView(); } catch (e) { try { window.scrollTo(0, 100000); } catch (x) { /* segue */ } } });
 })();

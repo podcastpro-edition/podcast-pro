@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.46"
+VERSAO = "1.0.47"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -457,6 +457,23 @@ def _kmeans(X, k, tentativas=8, semente=1):
     return melhor
 
 
+def _silhueta(X, rot):
+    """Quão separados estão os grupos (-1 a 1; acima de ~0,25 = bem separados)."""
+    import numpy as np
+
+    ks = np.unique(rot)
+    if len(ks) < 2:
+        return -1.0
+    d = np.sqrt(((X[:, None, :] - X[None, :, :]) ** 2).sum(axis=2))
+    sil = []
+    for i in range(len(X)):
+        mesmo = rot == rot[i]
+        a = d[i, mesmo].sum() / max(1, mesmo.sum() - 1)
+        b = min(d[i, rot == k].mean() for k in ks if k != rot[i])
+        sil.append((b - a) / max(a, b, 1e-9))
+    return float(np.mean(sil))
+
+
 def vozes_na_trilha(caminho, n_vozes, duracao_minima=1.5, taxa=16000, janela=1.2, passo=0.6, canal=None, recorte=None):
     """Separa as vozes de uma trilha só pelo timbre e pela altura da voz.
     Devolve {"trechos":[{ini,fim,voz}], "tempo":{voz:segundos}, "janela":0.1}.
@@ -489,6 +506,19 @@ def vozes_na_trilha(caminho, n_vozes, duracao_minima=1.5, taxa=16000, janela=1.2
     col[np.isnan(col)] = np.nanmedian(col) if np.isfinite(np.nanmedian(col)) else 0.0
     feats = (feats - feats.mean(axis=0)) / (feats.std(axis=0) + 1e-6)
     rot = _kmeans(feats, max(1, int(n_vozes))) if n_vozes > 1 else np.zeros(len(feats), dtype=int)
+    # quantas vozes parecem existir de verdade? (o painel avisa se forem mais do que as pessoas listadas)
+    k_sugerido = int(n_vozes)
+    try:
+        amostra = feats if len(feats) <= 1200 else feats[np.random.default_rng(0).choice(len(feats), 1200, replace=False)]
+        melhor, melhor_nota = None, 0.0
+        for k in range(2, 7):
+            nota = _silhueta(amostra, _kmeans(amostra, k, tentativas=4))
+            if nota > melhor_nota:
+                melhor, melhor_nota = k, nota
+        if melhor and melhor_nota >= 0.2 and melhor > int(n_vozes):
+            k_sugerido = melhor
+    except Exception:
+        pass
     # suaviza (mediana de 5 janelas)
     sua = rot.copy()
     for i in range(len(rot)):
@@ -541,7 +571,7 @@ def vozes_na_trilha(caminho, n_vozes, duracao_minima=1.5, taxa=16000, janela=1.2
     for a, b, v in trechos:
         tempo[v] = tempo.get(v, 0.0) + (b - a) * 0.1
         saida.append({"ini": round(a * 0.1 + desloc, 2), "fim": round(b * 0.1 + desloc, 2), "voz": int(v)})
-    return {"trechos": saida, "tempo": {str(k): round(v, 1) for k, v in tempo.items()}}
+    return {"trechos": saida, "tempo": {str(k): round(v, 1) for k, v in tempo.items()}, "kSugerido": k_sugerido}
 
 
 def ligar_vozes_as_pessoas(res_vozes, wav, pessoas, cameras, recorte=None):
@@ -2129,7 +2159,7 @@ class Handler(BaseHTTPRequestHandler):
                                         "mapa": {str(k): v for k, v in lig["mapa"].items()},
                                         "confiavel": lig["confiavel"],
                                         "amostras": {str(k): v for k, v in lig["amostras"].items()},
-                                        "margem": lig.get("margem")})
+                                        "margem": lig.get("margem"), "kSugerido": res.get("kSugerido")})
 
             if self.path == "/speakers":
                 trechos, tempo, _, _ = quem_fala(
