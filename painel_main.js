@@ -1997,7 +1997,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const c = $("listaLeg");
     c.innerHTML = "";
     lista.forEach((x, i) => {
-      const lin = document.createElement("div"); lin.className = "lin";
+      const lin = document.createElement("div"); lin.className = "lin"; lin.dataset.ini = x.ini.toFixed(2); lin.dataset.nome = x.nome;
       const tc = document.createElement("div"); tc.className = "tc"; tc.title = "Ir para este ponto da timeline";
       tc.innerHTML = fmt(x.ini) + "<br>" + fmt(x.fim);
       tc.addEventListener("click", async () => {
@@ -2077,4 +2077,45 @@ $("btnTesteModelo").addEventListener("click", async () => {
       msg("Pronto: " + feitas + " legenda(s) corrigida(s)." + (falhas.length ? " Não trocadas (linhas): " + falhas.join(", ") + " (o clipe foi movido; carregue de novo)." : "") + " Para corrigir mais, clique em Carregar de novo. (Ctrl+Z desfaz.)");
     } catch (e) { msg("Erro ao " + etapa + ": " + (e && e.message ? e.message : e), true); }
   });
+})();
+
+
+// ---- Ao clicar numa legenda Criativo na timeline, o texto já aparece no painel ----
+(function () {
+  let ultima = "";
+  let ocupado = false;
+  const aba = () => { const e = $("txtEditLeg"); return e && e.offsetParent !== null; };
+  async function olhar() {
+    if (ocupado || !aba()) return;
+    ocupado = true;
+    try {
+      const ppro = require("premierepro");
+      const projeto = await ppro.Project.getActiveProject();
+      const seq = projeto && (await projeto.getActiveSequence());
+      if (!seq) return;
+      const sel = await seq.getSelection();
+      const itens = await sel.getTrackItems();
+      if (!itens || !itens.length) { ultima = ""; return; }
+      const it = itens[0];
+      const nome = (await (await it.getProjectItem()).name) || "";
+      if (!/^leg\d+_Criativo/.test(nome)) return;
+      const ini = (await it.getStartTime()).seconds;
+      const chave = nome + "@" + ini.toFixed(2);
+      if (chave === ultima) return;
+      ultima = chave;
+      let info = null;
+      try { info = await chamar("/legenda/info", { nome }); } catch (e) { info = null; }
+      const campo = $("txtEditLeg");
+      if (info && campo) { campo.value = info.texto; const m = $("msgEditLeg"); if (m) { m.textContent = "Legenda selecionada (" + info.estilo + "). Edite o texto e clique em Aplicar."; m.style.color = "#9a9a9a"; } }
+      // lista completa: carrega sozinha na primeira vez e destaca a linha da legenda clicada
+      if (!document.querySelector("#listaLeg .lin")) { $("btnLerTodas").click(); await dormir(2500); }
+      document.querySelectorAll("#listaLeg .lin").forEach((l) => {
+        const eh = l.dataset.nome === nome && l.dataset.ini === ini.toFixed(2);
+        l.style.outline = eh ? "2px solid #7c4dff" : "";
+        if (eh) l.scrollIntoView({ block: "nearest" });
+      });
+    } catch (e) { /* sem seleção ou sem sequência: ignora */ }
+    finally { ocupado = false; }
+  }
+  setInterval(olhar, 900);
 })();
