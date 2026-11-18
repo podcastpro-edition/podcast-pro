@@ -2580,3 +2580,12 @@ $("btnTesteModelo").addEventListener("click", async () => {
     else mostrar("Participantes salvos. Clique em \"Montar podcast completo\" quando quiser.");
   });
 })();
+
+// versão atual ao lado do nome do painel
+(async function () {
+  try {
+    const r = await fetch(SERVICO + "/ping");
+    const d = await r.json();
+    if ($("verPainel") && d && d.versao) $("verPainel").textContent = "v" + d.versao;
+  } catch (e) { /* programa local ainda iniciando */ }
+})();
