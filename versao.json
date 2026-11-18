@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.31",
-  "notas": "Estrela tira o modelo da vista principal",
+  "versao": "1.0.32",
+  "notas": "Editar legendas: dois botoes coloridos",
   "arquivos": {
-    "server.py": "e664147e8dabbacb3e2f46358802a2a5e9440ae0821418409062d157202e1b31",
-    "painel_index.html": "8e3d7f21d343e3ef15226d6c291ce9ee0a83275ef85266b4dd84c8f9c784d06a",
-    "painel_main.js": "c4d7f587a991265b99d4a8b6c3ce37604f25151cb8708569a1e3fc4fdf70fcd0",
+    "server.py": "263551c7cf784907040d878c4c1e37b53142e14e2390e1150303ea826cfbc860",
+    "painel_index.html": "b409cabd2d45707ee272a7a1c3e237e355780227c5eae1f62147d8713b330f18",
+    "painel_main.js": "97b60aa157ce49df481f2085790e55502c632fdf945130d899764d0780168d62",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",

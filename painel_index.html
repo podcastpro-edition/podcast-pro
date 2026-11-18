@@ -73,6 +73,12 @@
     #listaLeg .tc { flex: 0 0 auto; width: 78px; font-size: 11px; line-height: 1.35; color: #9fb4ff; cursor: pointer; font-variant-numeric: tabular-nums; }
     #listaLeg .tc:hover { color: #fff; }
     #listaLeg .tx { flex: 1 1 auto; min-width: 0; background: #1f1f29; color: #eee; border: 1px solid #34344a; border-radius: 6px; padding: 5px 7px; font-size: 13px; }
+    .duplo { display: flex; gap: 8px; margin: 6px 0; }
+    .btn-cor { flex: 1 1 0; text-align: center; padding: 11px 6px; border-radius: 12px; font-weight: 600; font-size: 13px; cursor: pointer; color: #fff; border: 2px solid transparent; }
+    .btn-cor.roxo { background: #5b3fd1; }
+    .btn-cor.laranja { background: #e8631a; }
+    .btn-cor.ativo { border-color: #fff; }
+    .btn-cor:hover { filter: brightness(1.12); }
     #galeria { display: block; }
     #galeria .favoritos, #galeria .outros { display: flex; flex-wrap: wrap; gap: 8px; }
     #galeria .outros { max-height: 230px; overflow-y: auto; margin-top: 8px; padding: 6px; border: 1px solid #3a3a48; border-radius: 10px; background: #15151c; }
@@ -186,18 +192,23 @@
       <option value="Criativo 3">Criativo 3</option>
       <option value="Criativo 4">Criativo 4</option>
     </select>
-    <h2>Editar texto de uma legenda</h2>
-    <div class="dica">Clique numa legenda Criativo na timeline, depois em "Carregar texto". Mude o texto e clique em "Aplicar".</div>
-    <div id="btnLerLeg" class="mini">Carregar texto da legenda selecionada</div>
-    <textarea id="txtEditLeg" rows="3" style="width:100%;box-sizing:border-box;margin:6px 0;background:#15151c;color:#eee;border:1px solid #3a3a48;border-radius:8px;padding:6px;font-size:13px"></textarea>
-    <div id="btnAplicarLeg" class="mini">Aplicar texto na legenda selecionada</div>
-    <div id="msgEditLeg" class="dica"></div>
-    <h2>Corrigir o texto de todas as legendas</h2>
-    <div class="dica">Mostra todas as legendas Criativo da sequência com o tempo de cada uma, como na edição de legendas do Premiere. Clique no tempo para ir até aquele ponto na timeline. Corrija o texto (pode passar palavras para a legenda vizinha) e aplique: só as legendas mudadas são redesenhadas, nos mesmos lugares.</div>
-    <div id="btnLerTodas" class="mini">Carregar todas as legendas da sequência</div>
-    <div id="listaLeg"></div>
-    <div id="btnAplicarTodas" class="mini">Aplicar as correções</div>
-    <div id="msgTodasLeg" class="dica"></div>
+    <h2>Editar legendas</h2>
+    <div class="dica">Clique numa legenda Criativo na timeline e escolha o que editar.</div>
+    <div class="duplo">
+      <div id="btnLerLeg" class="btn-cor roxo">✏️ Legenda selecionada</div>
+      <div id="btnLerTodas" class="btn-cor laranja">📝 Todas as legendas</div>
+    </div>
+    <div id="areaUma" style="display:none">
+      <textarea id="txtEditLeg" rows="3" style="width:100%;box-sizing:border-box;margin:8px 0 6px;background:#15151c;color:#eee;border:1px solid #3a3a48;border-radius:8px;padding:6px;font-size:13px"></textarea>
+      <div id="btnAplicarLeg" class="mini">Aplicar texto nesta legenda</div>
+      <div id="msgEditLeg" class="dica"></div>
+    </div>
+    <div id="areaTodas" style="display:none">
+      <div class="dica" style="margin-top:8px">Cada legenda com o seu tempo. Clique no tempo para ir até lá na timeline. Corrija o texto (pode passar palavras para a legenda vizinha) e aplique: só as alteradas são redesenhadas.</div>
+      <div id="listaLeg"></div>
+      <div id="btnAplicarTodas" class="mini">Aplicar as correções</div>
+      <div id="msgTodasLeg" class="dica"></div>
+    </div>
     <div id="btnEscolherMogrt" class="mini">Escolher outro template (.mogrt)...</div>
     <label for="estAudio">Trilha de áudio da fala</label>
     <select id="estAudio"><option value="auto" selected>Automática (1ª com áudio)</option><option value="0">A1</option><option value="1">A2</option><option value="2">A3</option><option value="3">A4</option><option value="4">A5</option><option value="5">A6</option><option value="6">A7</option><option value="7">A8</option></select>

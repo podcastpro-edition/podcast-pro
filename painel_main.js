@@ -2141,9 +2141,10 @@ $("btnTesteModelo").addEventListener("click", async () => {
       let info = null;
       try { info = await chamar("/legenda/info", { nome }); } catch (e) { info = null; }
       const campo = $("txtEditLeg");
+      if (info && $("areaTodas").style.display !== "block" && window.abrirEdicaoLegenda) window.abrirEdicaoLegenda("uma");
       if (info && campo) { campo.value = info.texto; const m = $("msgEditLeg"); if (m) { m.textContent = "Legenda selecionada (" + info.estilo + "). Edite o texto e clique em Aplicar."; m.style.color = "#9a9a9a"; } }
       // lista completa: carrega sozinha na primeira vez e destaca a linha da legenda clicada
-      if (!document.querySelector("#listaLeg .lin")) { $("btnLerTodas").click(); await dormir(2500); }
+      if (!document.querySelector("#listaLeg .lin") && $("areaTodas").style.display === "block") { $("btnLerTodas").click(); await dormir(2500); }
       document.querySelectorAll("#listaLeg .lin").forEach((l) => {
         const eh = l.dataset.nome === nome && l.dataset.ini === ini.toFixed(2);
         l.style.outline = eh ? "2px solid #7c4dff" : "";
@@ -2153,4 +2154,19 @@ $("btnTesteModelo").addEventListener("click", async () => {
     finally { ocupado = false; }
   }
   setInterval(olhar, 900);
+})();
+
+
+// ---- Editar legendas: dois botões coloridos que abrem a área de edição correspondente ----
+(function () {
+  const uma = $("areaUma"), todas = $("areaTodas"), bUma = $("btnLerLeg"), bTodas = $("btnLerTodas");
+  if (!uma || !todas) return;
+  window.abrirEdicaoLegenda = (qual) => {
+    uma.style.display = qual === "uma" ? "block" : "none";
+    todas.style.display = qual === "todas" ? "block" : "none";
+    bUma.classList.toggle("ativo", qual === "uma");
+    bTodas.classList.toggle("ativo", qual === "todas");
+  };
+  bUma.addEventListener("click", () => window.abrirEdicaoLegenda("uma"));
+  bTodas.addEventListener("click", () => window.abrirEdicaoLegenda("todas"));
 })();
