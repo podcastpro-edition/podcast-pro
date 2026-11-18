@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.22",
-  "notas": "Modelos de legenda artisticos (Criativo 1 a 4) na aba Legendas",
+  "versao": "1.0.23",
+  "notas": "Legendas Criativo: um unico video transparente (leve, estilo AutoCut)",
   "arquivos": {
-    "server.py": "6f7db7df6dbbf0a07a75ca4d49091789b62eedbc5119bb67cd3c693ed879332b",
+    "server.py": "ad3ab014a56fcdfac1cc4440512f7958ef1af4ea9d4069a28a6035b4abf99b35",
     "painel_index.html": "54313e17e09558dab6b23da149f7c00f64381b38e317a639fcf1fad673721d15",
-    "painel_main.js": "ebe9fdb4157e1cbfa74daa6f250525bcbd3707e33ccfec948332c05c2fe1d355",
+    "painel_main.js": "9f6cb3e582d6c2def42628240a3b5ca8771eceb07ca9f3b5230715e014b4a860",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",

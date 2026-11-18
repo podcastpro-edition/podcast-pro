@@ -1162,6 +1162,41 @@ const legendar = (modo) => () => semPressa(async () => {
     if (!todas.length) return mostrar("Não encontrei falas nesse trecho. Confira a trilha de áudio da fala.", true);
     todas.sort((x, y) => x.seqIni - y.seqIni);
 
+    // ---- estilos Criativo: o programa desenha TODAS as legendas num único vídeo transparente
+    if (todas.every((l) => l.tipo === "overlay")) {
+      etapa = "desenhar as legendas";
+      const base = todas[0].seqIni;
+      let LARG = 1920, ALT = 1080, FPS = 30;
+      try { const fs = await seq.getFrameSize(); if (fs && fs.width > 0) { LARG = fs.width; ALT = fs.height; } } catch (e) { /* usa 1920x1080 */ }
+      mostrar("Desenhando " + todas.length + " legendas (" + ESTILO + ") num vídeo transparente...\n" +
+        "Isso pode levar alguns minutos. Não feche o Premiere.");
+      const ov = await chamar("/legendas_overlay", {
+        estilo: ESTILO, w: LARG, h: ALT, fps: FPS,
+        blocos: todas.map((l) => ({ a: l.seqIni - base, b: l.seqFim - base, texto: l.texto })),
+      });
+      etapa = "importar o vídeo das legendas";
+      mostrar("Colocando o vídeo das legendas na trilha V" + (iv + 1) + "...");
+      const raiz = await projeto.getRootItem();
+      const nomeArq = ov.arquivo.split(/[\\/]/).pop();
+      const antes = (await raiz.getItems()).filter((it) => it.name === nomeArq).length;
+      await projeto.importFiles([ov.arquivo], true, raiz, false);
+      let item = null;
+      for (let w = 0; w < 20 && !item; w++) {
+        await dormir(500);
+        const lst = (await raiz.getItems()).filter((it) => it.name === nomeArq);
+        if (lst.length > antes) item = lst[lst.length - 1];
+      }
+      if (!item) throw new Error("o Premiere não importou o vídeo das legendas");
+      etapa = "colocar o vídeo das legendas na timeline";
+      const edOv = await ppro.SequenceEditor.getEditor(seq);
+      const tOv = await ppro.TickTime.createWithSeconds(base + (ov.inicio || 0));
+      await executar(projeto, "Legendas: colocar", () => edOv.createOverwriteItemAction(item, tOv, iv, ia));
+      mostrar("Pronto! " + todas.length + " legendas " + ESTILO + " num único clipe na trilha V" + (iv + 1) +
+        " (" + Math.floor(base / 60) + ":" + String(Math.floor(base % 60)).padStart(2, "0") + " em diante).\n" +
+        "Fala lida da trilha A" + (ia + 1) + ". (Para desfazer: Ctrl+Z, ou apague o clipe.)");
+      return;
+    }
+
     // ---- coloca na trilha livre
     etapa = "inserir as legendas";
     const editor = await ppro.SequenceEditor.getEditor(seq);

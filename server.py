@@ -41,7 +41,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.22"
+VERSAO = "1.0.23"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -908,6 +908,190 @@ def palavras_do_trecho(caminho, inicio, fim, modelo, dispositivo, idioma):
 
 
 
+# ----------------------------------------------- legendas "overlay" (um vídeo transparente só)
+# Estilo dos 4 modelos Criativo, desenhados direto pelo programa local (sem importar sequências).
+# fonte: nome do arquivo; tam: altura da letra em fração da altura do quadro; y: posição vertical
+ESTILOS_OVERLAY = {
+    "Criativo 1": [
+        {"f": "Anton-Regular", "tam": 0.050, "y": 0.34, "cor": (176, 156, 255), "caixa": False},
+        {"f": "Anton-Regular", "tam": 0.150, "y": 0.50, "cor": (176, 156, 255), "caixa": True},
+        {"f": "Caveat Brush-Regular", "tam": 0.075, "y": 0.66, "cor": (176, 156, 255), "caixa": False},
+    ],
+    "Criativo 2": [
+        {"f": "Anton-Regular", "tam": 0.090, "y": 0.40, "cor": (255, 255, 255), "caixa": True},
+        {"f": "Caveat Brush-Regular", "tam": 0.100, "y": 0.52, "cor": (255, 205, 0), "caixa": False, "rot": 6},
+        {"f": "Anton-Regular", "tam": 0.090, "y": 0.64, "cor": (255, 255, 255), "caixa": True},
+    ],
+    "Criativo 3": [
+        {"f": "Anton-Regular", "tam": 0.140, "y": 0.44, "cor": (255, 215, 0), "caixa": True},
+        {"f": "Caveat Brush-Regular", "tam": 0.100, "y": 0.62, "cor": (255, 255, 255), "caixa": False, "rot": 4},
+    ],
+    "Criativo 4": [
+        {"f": "Poppins-Regular", "tam": 0.050, "y": 0.33, "cor": (255, 255, 255), "caixa": False},
+        {"f": "Poppins-Bold", "tam": 0.090, "y": 0.45, "cor": (255, 255, 255), "caixa": False},
+        {"f": "Poppins-Bold", "tam": 0.090, "y": 0.57, "cor": (255, 40, 200), "caixa": False},
+        {"f": "Poppins-Regular", "tam": 0.042, "y": 0.68, "cor": (255, 255, 255), "caixa": False},
+    ],
+}
+
+
+def _achar_fonte(nome, tamanho):
+    from PIL import ImageFont
+    pastas = [os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Windows", "Fonts"),
+              os.path.join(os.environ.get("WINDIR", "C:\\Windows"), "Fonts")]
+    for p in pastas:
+        for ext in (".ttf", ".otf"):
+            c = os.path.join(p, nome + ext)
+            if os.path.isfile(c):
+                return ImageFont.truetype(c, tamanho)
+    for reserva in ("segoeuib.ttf", "arialbd.ttf", "arial.ttf"):
+        for p in pastas:
+            c = os.path.join(p, reserva)
+            if os.path.isfile(c):
+                return ImageFont.truetype(c, tamanho)
+    try:
+        return ImageFont.load_default(tamanho)
+    except TypeError:
+        return ImageFont.load_default()
+
+
+def _sprites_legenda(estilo, texto, W, H):
+    """Desenha cada linha da legenda numa imagem pequena transparente. Devolve [(imagem, cx, cy)]."""
+    from PIL import Image, ImageDraw, ImageFilter
+    camadas = ESTILOS_OVERLAY[estilo]
+    linhas = dividir_em_linhas(texto, len(camadas))
+    linhas += [""] * (len(camadas) - len(linhas))
+    saida = []
+    for cam, txt in zip(camadas, linhas):
+        if not txt:
+            continue
+        if cam.get("caixa"):
+            txt = txt.upper()
+        tam = max(10, int(H * cam["tam"]))
+        fonte = _achar_fonte(cam["f"], tam)
+        while tam > 12 and fonte.getlength(txt) > W * 0.9:
+            tam = int(tam * 0.92)
+            fonte = _achar_fonte(cam["f"], tam)
+        m = int(tam * 0.5)
+        larg = int(fonte.getlength(txt)) + 2 * m
+        alt = int(tam * 1.5) + 2 * m
+        base = Image.new("RGBA", (larg, alt), (0, 0, 0, 0))
+        d = ImageDraw.Draw(base)
+        d.text((larg / 2, alt / 2), txt, font=fonte, fill=cam["cor"] + (255,), anchor="mm")
+        sombra = Image.new("RGBA", (larg, alt), (0, 0, 0, 0))
+        sombra.putalpha(base.getchannel("A").point(lambda v: int(v * 0.65)))
+        sombra = Image.merge("RGBA", (Image.new("L", (larg, alt), 0),) * 3 + (sombra.getchannel("A"),))
+        sombra = sombra.filter(ImageFilter.GaussianBlur(max(2, tam // 18)))
+        desl = max(2, tam // 16)
+        img = Image.new("RGBA", (larg, alt), (0, 0, 0, 0))
+        img.alpha_composite(sombra, (desl // 2, desl))
+        img.alpha_composite(base)
+        if cam.get("rot"):
+            img = img.rotate(cam["rot"], resample=Image.BICUBIC, expand=True)
+        saida.append((img, W / 2.0, H * cam["y"]))
+    return saida
+
+
+def _quadro_legenda(sprites, W, H, t, dur):
+    """Monta o quadro da legenda no tempo t (segundos desde o início dela). Entrada com 'pop' e saída suave."""
+    from PIL import Image
+    quadro = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    for i, (img, cx, cy) in enumerate(sprites):
+        te = t - i * 0.07
+        saida_t = dur - t
+        if te <= 0:
+            continue
+        esc, alfa = 1.0, 1.0
+        if te < 0.28:
+            k = te / 0.28
+            esc = 0.75 + 0.25 * k + 0.07 * math.sin(k * math.pi)
+            alfa = min(1.0, te / 0.14)
+        if saida_t < 0.18:
+            k = max(0.0, saida_t / 0.18)
+            alfa = min(alfa, k)
+            esc *= 0.96 + 0.04 * k
+        if alfa <= 0.01:
+            continue
+        s = img
+        if abs(esc - 1.0) > 0.003:
+            s = img.resize((max(1, int(img.width * esc)), max(1, int(img.height * esc))), Image.BILINEAR)
+        if alfa < 0.999:
+            s = s.copy()
+            s.putalpha(s.getchannel("A").point(lambda v, a=alfa: int(v * a)))
+        quadro.alpha_composite(s, (int(cx - s.width / 2), int(cy - s.height / 2)))
+    return quadro
+
+
+def gerar_overlay(blocos, estilo, W, H, fps, saida):
+    """blocos: [(inicio, fim, texto)] em segundos (já em ordem). Gera UM vídeo .mov com transparência."""
+    import tempfile
+    if estilo not in ESTILOS_OVERLAY:
+        raise RuntimeError("Estilo desconhecido: " + str(estilo))
+    W, H = int(W) // 2 * 2, int(H) // 2 * 2
+    fps = float(fps)
+    pasta = tempfile.mkdtemp(prefix="ovl_")
+    partes = []
+    cursor = None  # quadro onde terminou a parte anterior
+    blocos = sorted(blocos)
+    # termina cada legenda antes da próxima começar
+    ajust = []
+    for i, (a, b, tx) in enumerate(blocos):
+        if i + 1 < len(blocos):
+            b = min(b, blocos[i + 1][0] - 1.0 / fps)
+        if b - a >= 0.3:
+            ajust.append((a, b, tx))
+    if not ajust:
+        raise RuntimeError("Nenhuma legenda para desenhar.")
+    t0 = ajust[0][0]
+    enc = ["-c:v", "qtrle", "-pix_fmt", "argb"]
+
+    def _ffmpeg_gap(n, arq):
+        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+                        "color=c=black@0.0:s=%dx%d:r=%s,format=rgba" % (W, H, fps), "-frames:v", str(n)] + enc + [arq],
+                       check=True)
+
+    for i, (a, b, tx) in enumerate(ajust):
+        fa = int(round((a - t0) * fps))
+        fb = max(fa + 2, int(round((b - t0) * fps)))
+        if cursor is not None and fa > cursor:
+            arq = os.path.join(pasta, "g%05d.mov" % i)
+            _ffmpeg_gap(fa - cursor, arq)
+            partes.append(arq)
+        elif cursor is not None:
+            fa = cursor
+        n = fb - fa
+        sp = _sprites_legenda(estilo, tx, W, H)
+        arq = os.path.join(pasta, "c%05d.mov" % i)
+        p = subprocess.Popen(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba",
+                              "-s", "%dx%d" % (W, H), "-r", str(fps), "-i", "-"] + enc + [arq],
+                             stdin=subprocess.PIPE)
+        dur = n / fps
+        estatico = None
+        for k in range(n):
+            t = k / fps
+            if 0.5 < t < dur - 0.2:
+                if estatico is None:
+                    estatico = _quadro_legenda(sp, W, H, 1.0, 99.0).tobytes()
+                p.stdin.write(estatico)
+            else:
+                p.stdin.write(_quadro_legenda(sp, W, H, t, dur).tobytes())
+        p.stdin.close()
+        if p.wait() != 0:
+            raise RuntimeError("O ffmpeg falhou ao desenhar a legenda %d." % (i + 1))
+        partes.append(arq)
+        cursor = fa + n
+    lista = os.path.join(pasta, "lista.txt")
+    with open(lista, "w", encoding="utf-8") as f:
+        for arq in partes:
+            f.write("file '%s'\n" % arq.replace("\\", "/"))
+    os.makedirs(os.path.dirname(saida), exist_ok=True)
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", lista,
+                    "-c", "copy", saida], check=True)
+    import shutil
+    shutil.rmtree(pasta, ignore_errors=True)
+    return {"arquivo": saida, "inicio": t0, "legendas": len(ajust), "fim": ajust[-1][1]}
+
+
 CAIXA_ALTA = {"Criativo 1": [False, True, False], "Criativo 2": [True, False, True],
               "Criativo 3": [True, False], "Criativo 4": [False, False, False, False]}
 
@@ -933,7 +1117,7 @@ def dividir_em_linhas(texto, n):
 
 
 def legendas_estilizadas(wav, inicio, fim, modo, estilo, pasta_saida, enxuto, semente,
-                         cache=None, prefixo=""):
+                         cache=None, prefixo="", overlay=True):
     import random
 
     cache = cache or (os.path.splitext(wav)[0] + "_palavras.json")
@@ -953,6 +1137,9 @@ def legendas_estilizadas(wav, inicio, fim, modo, estilo, pasta_saida, enxuto, se
     for i, (ini, fi, texto) in enumerate(blocos):
         texto = re.sub(r"(\w) -(\w)", r"\1-\2", texto)  # "Bem -vindos" -> "Bem-vindos"
         est = sorteio.choice(nomes) if estilo == "aleatorio" else estilo
+        if est in MODELOS_PROJETO and overlay:  # desenhado pelo programa (um vídeo transparente só)
+            saida.append({"ini": ini, "fim": fi, "texto": texto, "estilo": est, "tipo": "overlay"})
+            continue
         if est in MODELOS_PROJETO:  # modelo artístico guardado em projeto do Premiere
             cfg = MODELOS_PROJETO[est]
             n = len(cfg["camadas"])
@@ -1401,6 +1588,15 @@ class Handler(BaseHTTPRequestHandler):
                     corpo.get("modo", "curtas"), corpo.get("estilo", "aleatorio"),
                     os.path.normpath(pasta), bool(corpo.get("enxuto", False)),
                     corpo.get("semente", 1), corpo.get("cache"), corpo.get("prefixo", ""))})
+
+            if self.path == "/legendas_overlay":
+                import time
+                pasta_ov = os.path.join(_RAIZ, "cache", "overlays")
+                nome_ov = "overlay_%s_%d.mov" % (re.sub(r"\W", "", corpo.get("estilo", "x")), int(time.time()))
+                blocos = [(float(b["a"]), float(b["b"]), str(b["texto"])) for b in corpo["blocos"]]
+                return self._responder(gerar_overlay(blocos, corpo.get("estilo"), corpo.get("w", 1920),
+                                                     corpo.get("h", 1080), corpo.get("fps", 30),
+                                                     os.path.join(pasta_ov, nome_ov)))
 
             if self.path == "/plano_vertical":
                 for o in corpo["cameras"].values():
