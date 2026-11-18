@@ -2743,7 +2743,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
         ULTIMA_PREVIA = SERVICO + "/painel/img/prev_editor.png?t=" + Date.now();
         if (im) im.src = ULTIMA_PREVIA;
       } catch (e) { const m = $("edMsg"); if (m) m.textContent = "Prévia: " + (e && e.message ? e.message : e); }
-    }, 400);
+    }, 250);
   }
 
   // ---- componentes ----
@@ -2940,7 +2940,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       E.msgMov = (alvo.length === 1 ? "Linha " + (E.sel + 1) : "Todas as linhas") + ": esquerda " + Math.round(alvo[0].x) + "%, altura " + Math.round(alvo[0].y) + "%";
       desenhar(); agendarPrevia();
     };
-    const setas = [["↖", -2, -2], ["↑", 0, -2], ["↗", 2, -2], ["←", -2, 0], ["●", 0, 0], ["→", 2, 0], ["↙", -2, 2], ["↓", 0, 2], ["↘", 2, 2]];
+    const setas = [["↖", -5, -5], ["↑", 0, -5], ["↗", 5, -5], ["←", -5, 0], ["●", 0, 0], ["→", 5, 0], ["↙", -5, 5], ["↓", 0, 5], ["↘", 5, 5]];
     setas.forEach(([t, dx, dy], n) => {
       const r = Math.floor(n / 3), c = n % 3;
       const b = el("div", "", t);
