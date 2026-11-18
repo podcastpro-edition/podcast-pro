@@ -254,26 +254,27 @@ async function acharClipe(ppro, projeto, caminho) {
 const NOME_BIN_LEG = "Legendas PODCAST PRO";
 const ehArquivoLeg = (n) => /^leg\d+_.*\.mov$/i.test(String(n));
 
-async function binLegendas(ppro, projeto) {
+async function binLegendas(ppro, projeto, nomeBin) {
+  const NOME = nomeBin || NOME_BIN_LEG;
   const raiz = await projeto.getRootItem();
   const achar = async () => {
     for (const it of await raiz.getItems()) {
-      if (it.name !== NOME_BIN_LEG) continue;
+      if (it.name !== NOME) continue;
       try { const f = ppro.FolderItem.cast(it); if (f) return f; } catch (e) { /* não é pasta */ }
     }
     return null;
   };
   let bin = await achar();
   if (bin) return bin;
-  try { await executar(projeto, "Criar pasta de legendas", () => raiz.createBinAction(NOME_BIN_LEG, true)); } catch (e) { return null; }
+  try { await executar(projeto, "Criar pasta de legendas", () => raiz.createBinAction(NOME, true)); } catch (e) { return null; }
   for (let w = 0; w < 10 && !bin; w++) { await dormir(300); bin = await achar(); }
   return bin; // null = não deu para criar: usa a raiz do projeto
 }
 
 // Importa os arquivos direto na pasta das legendas e devolve { pasta, porNome }.
-async function importarLegendas(ppro, projeto, arquivos) {
+async function importarLegendas(ppro, projeto, arquivos, nomeBin) {
   const nomeDe = (c) => String(c).split(/[\\/]/).pop();
-  const pasta = (await binLegendas(ppro, projeto)) || (await projeto.getRootItem());
+  const pasta = (await binLegendas(ppro, projeto, nomeBin)) || (await projeto.getRootItem());
   await projeto.importFiles(arquivos, true, pasta, false);
   await dormir(1500);
   let itens = [];
@@ -2062,7 +2063,7 @@ $("btnVertical").addEventListener("click", () => semPressa(async () => {
 
 // --- Abas do painel ---------------------------------------------------------
 (function () {
-  const abas = ["Podcast", "Legendas", "Vertical", "Silencios", "Buscar", "Avancado"];
+  const abas = ["Podcast", "Legendas", "Criativos", "Vertical", "Silencios", "Buscar", "Avancado"];
   const comTrecho = new Set(["Vertical"]);
   function abrir(nome) {
     abas.forEach((a) => {
@@ -2746,6 +2747,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
   }
   let ULTIMA_PREVIA = "";
   function agendarPrevia(semReiniciar) {
+    if (MODO_CRIATIVO) { agendarPreviaC(); return; }
     if (semReiniciar && timerPrevia) return; // durante o arraste/segurar, atualiza a cada 250 ms
     if (timerPrevia) clearTimeout(timerPrevia);
     timerPrevia = setTimeout(async () => {
@@ -2915,7 +2917,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
   }
 
   // opções de uma linha (aparecem só para a linha escolhida)
-  function opcoesLinha(l, i) {
+  function opcoesLinha(l, i, semRemover) {
     const c = el("div", "ed-opc");
     c.appendChild(el("div", "rt", "Fonte")); c.lastChild.style.fontSize = "12px";
     c.appendChild(seletorFonte(l));
@@ -2936,7 +2938,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     efeito("sombra", "Sombra", (b, o) => { b.appendChild(linha("Intensidade", stepper(o, "forca", 10, 100, 5, "%"))); });
     efeito("tarja", "Tarja atrás do texto", (b, o) => { b.appendChild(campoCor(o, "cor")); b.appendChild(linha("Opacidade", stepper(o, "opac", 10, 100, 5, "%"))); b.appendChild(linha("Cantos arredondados", stepper(o, "raio", 0, 60, 5, "%"))); });
     efeito("brilho", "Brilho (glow)", (b, o) => { b.appendChild(campoCor(o, "cor")); b.appendChild(linha("Intensidade", stepper(o, "forca", 10, 100, 5, "%"))); });
-    if (E.linhas.length > 1) {
+    if (!semRemover && E.linhas.length > 1) {
       const x = el("div", "ed-btn verm", "Remover esta linha");
       x.addEventListener("click", () => { E.linhas.splice(i, 1); E.marc = []; E.sel = Math.max(0, i - 1); desenhar(); agendarPrevia(); });
       c.appendChild(x);
@@ -2945,7 +2947,9 @@ $("btnTesteModelo").addEventListener("click", async () => {
   }
 
   let LARG_PREV = 0;
+  let MODO_CRIATIVO = false;
   function desenhar() { // redesenha sem o painel "pular": guarda a rolagem e reserva o espaço da prévia
+    if (MODO_CRIATIVO) { desenharC(); return; }
     const y0 = Math.max(window.scrollY || 0, document.documentElement.scrollTop || 0, document.body.scrollTop || 0);
     const ant = $("edPrevia");
     if (ant && ant.offsetWidth) LARG_PREV = ant.offsetWidth / (ant.getAttribute("data-vert") === "1" ? 0.4 : 1);
@@ -3166,6 +3170,287 @@ $("btnTesteModelo").addEventListener("click", async () => {
       desenhar(); agendarPrevia();
     } catch (e) { caixa.textContent = "Não consegui abrir o criador: " + (e && e.message ? e.message : e); }
   });
+
+  // =====================  ABA CRIATIVOS  =====================
+  const caixaC = $("criativoCaixa");
+  const ENTR_IMG = [["fade", "Surgir suave"], ["zoom", "Zoom (de perto para o normal)"], ["subir", "Entra de baixo"], ["descer", "Entra de cima"],
+                    ["esquerda", "Entra da esquerda"], ["direita", "Entra da direita"], ["revelar", "Revelar (varredura)"], ["nenhuma", "Sem animação"]];
+  const novoTexto = (titulo, tam, y, cor, larg) => ({ titulo, texto: "", larg, linha: Object.assign(linhaPadrao(0), { tam, y, cor }) });
+  let C = null, timerC = null, ULTIMA_C = "", LARG_C = 0;
+  const padraoC = () => ({
+    imagem: "", nomeImg: "",
+    fundo: { escurecer: 40, desfoque: 0, zoomLento: true, entrada: "fade", duracao: 0.6, saida: true },
+    textos: [novoTexto("Frase", 7, 45, "#FFFFFF", 78), novoTexto("Referência / autor (opcional)", 4, 72, "#FFB000", 60)],
+    anim: { entrada: "subir", duracao: 0.35, atraso: 0.12, saida: "fade", inicio: 0.5 },
+    formato: "h", guias: false, abertoT: -1, animAberta: false, io: null,
+  });
+  const salvarC = () => { try { localStorage.setItem("ppCriativo", JSON.stringify(Object.assign({}, C, { io: null }))); } catch (e) { /* sem armazenamento */ } };
+  const carregarC = () => { try { const j = JSON.parse(localStorage.getItem("ppCriativo") || "null"); if (j && j.fundo && j.textos && j.textos.length) return Object.assign(padraoC(), j, { io: null }); } catch (e) { /* ignora */ } return padraoC(); };
+
+  function linhaParaDefC(l) {
+    const o = { f: l.f, tam: l.tam / 100, y: l.y / 100, x: l.x / 100, cor: hex2rgb(l.cor) || [255, 255, 255], caixa: l.caixa, rot: 0 };
+    if (l.contorno.on) o.contorno = { cor: hex2rgb(l.contorno.cor) || [0, 0, 0], larg: l.contorno.larg / 100 };
+    o.sombra = l.sombra.on ? { opac: l.sombra.forca / 100 } : { ligada: false };
+    if (l.tarja.on) o.tarja = { cor: hex2rgb(l.tarja.cor) || [0, 0, 0], opac: l.tarja.opac / 100, raio: l.tarja.raio / 100, pad: 0.25 };
+    if (l.brilho.on) o.brilho = { cor: hex2rgb(l.brilho.cor) || [255, 215, 0], forca: l.brilho.forca / 100, raio: 0.25 };
+    return o;
+  }
+  function defC() {
+    return {
+      imagem: C.imagem, guias: !!C.guias,
+      fundo: { escurecer: C.fundo.escurecer / 100, desfoque: C.fundo.desfoque, zoomLento: C.fundo.zoomLento, entrada: C.fundo.entrada, duracao: C.fundo.duracao, saida: C.fundo.saida },
+      textos: C.textos.map((t) => ({ texto: t.texto, larg: t.larg / 100, linha: linhaParaDefC(t.linha) })),
+      anim: { entrada: C.anim.entrada, duracao: C.anim.duracao, atraso: C.anim.atraso, saida: C.anim.saida, inicio: C.anim.inicio },
+    };
+  }
+  const msgC = (t, erro) => { const m = $("crMsg"); if (m) { m.textContent = t; m.style.color = erro ? "#ff8a80" : "#9a9a9a"; } };
+  const fmtT = (s) => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0") + "." + String(Math.round((s % 1) * 10) % 10);
+
+  function agendarPreviaC() {
+    salvarC();
+    if (timerC) clearTimeout(timerC);
+    timerC = setTimeout(async () => {
+      timerC = null;
+      try {
+        await chamar("/criativo/previa", { def: defC(), formato: C.formato });
+        ULTIMA_C = SERVICO + "/painel/img/prev_criativo.png?t=" + Date.now();
+        const im = $("crPrevia"); if (im) im.src = ULTIMA_C;
+      } catch (e) { msgC("Prévia: " + (e && e.message ? e.message : e), true); }
+    }, 300);
+  }
+
+  function desenharC() {
+    const y0 = Math.max(window.scrollY || 0, document.documentElement.scrollTop || 0, document.body.scrollTop || 0);
+    const ant = $("crPrevia");
+    if (ant && ant.offsetWidth) LARG_C = ant.offsetWidth / (ant.getAttribute("data-vert") === "1" ? 0.4 : 1);
+    desenharCInterno();
+    const volta = () => { try { window.scrollTo(0, y0); } catch (e) { /* segue */ } try { document.documentElement.scrollTop = y0; document.body.scrollTop = y0; } catch (e) { /* segue */ } };
+    volta(); setTimeout(volta, 60); setTimeout(volta, 350);
+  }
+
+  const cartao = (titulo) => { const c = el("div", "ed-card"); c.appendChild(el("div", "ed-tit", titulo)); return c; };
+  const miniBtn = (txt, fn, cls) => { const b = el("div", "ed-btn" + (cls ? " " + cls : ""), txt); b.style.width = "auto"; b.style.paddingLeft = "10px"; b.style.paddingRight = "10px"; b.addEventListener("click", fn); return b; };
+
+  function desenharCInterno() {
+    caixaC.innerHTML = "";
+    // ---- 1. trecho IN/OUT + fala
+    const t1 = cartao("1. Trecho na sequência (IN/OUT)");
+    const info = el("div", "rt", C.io ? "Trecho marcado: " + fmtT(C.io.ini) + " até " + fmtT(C.io.fim) + "  (" + (C.io.fim - C.io.ini).toFixed(1).replace(".", ",") + " s)" : "Na timeline: cursor no começo e tecla I; cursor no fim e tecla O. Depois clique em Ler IN/OUT.");
+    info.style.fontSize = "12px"; info.style.marginBottom = "4px"; t1.appendChild(info);
+    const lin1 = el("div"); lin1.style.display = "flex";
+    const bLer = miniBtn("Ler IN/OUT", () => semPressa(async () => { await lerInOutC(true); desenharC(); }));
+    bLer.style.marginRight = "6px"; lin1.appendChild(bLer);
+    lin1.appendChild(miniBtn("✍ Escrever o que foi dito", () => semPressa(escreverFalaC), "verde"));
+    t1.appendChild(lin1);
+    caixaC.appendChild(t1);
+
+    // ---- 2. imagem de fundo
+    const t2 = cartao("2. Imagem de fundo");
+    const lin2 = el("div"); lin2.style.display = "flex"; lin2.style.alignItems = "center";
+    const bImg = miniBtn(C.imagem ? "Trocar imagem" : "Escolher imagem", escolherImagemC);
+    bImg.style.marginRight = "8px"; lin2.appendChild(bImg);
+    const nomeI = el("div", "rt", C.imagem ? C.nomeImg : "Sem imagem (usa cor lisa)"); nomeI.style.fontSize = "12px"; nomeI.style.flex = "1"; lin2.appendChild(nomeI);
+    if (C.imagem) lin2.appendChild(miniBtn("✕", () => { C.imagem = ""; C.nomeImg = ""; desenharC(); agendarPreviaC(); }));
+    t2.appendChild(lin2);
+    t2.appendChild(linha("Escurecer a imagem", stepper(C.fundo, "escurecer", 0, 90, 5, "%")));
+    t2.appendChild(linha("Desfoque", stepper(C.fundo, "desfoque", 0, 30, 1, "")));
+    t2.appendChild(linha("Zoom lento durante o criativo", bolinha(C.fundo.zoomLento, (on) => { C.fundo.zoomLento = on; agendarPreviaC(); })));
+    t2.appendChild(linha("Animação de entrada da imagem", selecionar(ENTR_IMG, C.fundo.entrada, (v) => { C.fundo.entrada = v; agendarPreviaC(); }, "190px")));
+    t2.appendChild(linha("Duração da entrada (s)", stepper(C.fundo, "duracao", 0.1, 2, 0.1, " s", 1)));
+    t2.appendChild(linha("Sumir suave no final", bolinha(C.fundo.saida, (on) => { C.fundo.saida = on; agendarPreviaC(); })));
+    caixaC.appendChild(t2);
+
+    // ---- prévia
+    const tp = cartao("Prévia (como o criativo fica parado)");
+    const fm = el("div"); fm.style.display = "flex"; fm.style.marginBottom = "6px";
+    for (const [v, n] of [["h", "Vídeo horizontal"], ["v", "Vídeo vertical"]]) {
+      const b = el("div", "ed-btn", n); b.style.marginRight = "6px"; b.style.width = "auto"; b.style.paddingLeft = "10px"; b.style.paddingRight = "10px";
+      if (C.formato === v) { b.style.backgroundColor = "#4a3fa0"; }
+      b.addEventListener("click", () => { C.formato = v; ULTIMA_C = ""; desenharC(); agendarPreviaC(); });
+      fm.appendChild(b);
+    }
+    const bg = el("div", "ed-btn", C.guias ? "Guias: ligadas" : "Guias: desligadas"); bg.style.width = "auto"; bg.style.paddingLeft = "10px"; bg.style.paddingRight = "10px";
+    if (C.guias) bg.style.backgroundColor = "#4a3fa0";
+    bg.addEventListener("click", () => { C.guias = !C.guias; desenharC(); agendarPreviaC(); });
+    fm.appendChild(bg); tp.appendChild(fm);
+    const vert = C.formato === "v";
+    const mold = el("div");
+    if (vert) { mold.style.width = "40%"; mold.style.marginLeft = "auto"; mold.style.marginRight = "auto"; }
+    const im = document.createElement("img"); im.id = "crPrevia"; im.className = "ed-prev"; im.setAttribute("data-vert", vert ? "1" : "0"); im.style.display = "block";
+    if (LARG_C) im.style.minHeight = Math.round(LARG_C * (vert ? 0.4 * 16 / 9 : 9 / 16)) + "px";
+    if (ULTIMA_C) im.src = ULTIMA_C;
+    mold.appendChild(im); tp.appendChild(mold);
+    caixaC.appendChild(tp);
+
+    // ---- 3. textos
+    const t3 = cartao("3. Textos");
+    C.textos.forEach((t, i) => {
+      const cab = el("div"); cab.style.display = "flex"; cab.style.alignItems = "center"; cab.style.marginTop = "6px";
+      const nome = el("div", "rt", t.titulo); nome.style.flex = "1"; nome.style.fontSize = "12px"; cab.appendChild(nome);
+      const ab = el("div", "", "Estilo ▾"); ab.style.fontSize = "12px"; ab.style.cursor = "pointer"; ab.style.padding = "2px 6px"; ab.style.color = C.abertoT === i ? "#b9acff" : "#8a8a9c";
+      ab.addEventListener("click", () => { C.abertoT = C.abertoT === i ? -1 : i; desenharC(); agendarPreviaC(); });
+      cab.appendChild(ab); t3.appendChild(cab);
+      const ta = document.createElement("textarea");
+      ta.value = t.texto; ta.rows = i === 0 ? 4 : 2; ta.placeholder = i === 0 ? "Escreva a frase (ou use \"Escrever o que foi dito\")" : "Ex.: Provérbios 24:3";
+      ta.style.width = "100%"; ta.style.boxSizing = "border-box"; ta.style.backgroundColor = "#0f0f16"; ta.style.color = "#e6e6ee"; ta.style.border = "1px solid #3a3a4c"; ta.style.borderRadius = "8px"; ta.style.padding = "6px";
+      ta.addEventListener("input", () => { t.texto = ta.value; agendarPreviaC(); });
+      t3.appendChild(ta);
+      t3.appendChild(linha("Largura do texto na tela", stepper(t, "larg", 30, 90, 5, "%")));
+      if (C.abertoT === i) t3.appendChild(opcoesLinha(t.linha, i, true));
+    });
+    caixaC.appendChild(t3);
+
+    // ---- animação do texto
+    const t4 = el("div", "ed-card");
+    const cab = el("div", "ed-tit"); cab.style.display = "flex"; cab.style.alignItems = "center"; cab.style.cursor = "pointer"; cab.style.margin = "0";
+    const tt = el("div", "", "Animação do texto"); tt.style.flex = "1";
+    const sa = el("div", "", "▾"); sa.style.color = C.animAberta ? "#b9acff" : "#8a8a9c"; sa.style.paddingRight = "6px";
+    cab.appendChild(tt); cab.appendChild(sa);
+    cab.addEventListener("click", () => { C.animAberta = !C.animAberta; desenharC(); agendarPreviaC(); });
+    t4.appendChild(cab);
+    if (C.animAberta) {
+      t4.appendChild(selecionar(ANIMS, C.anim.entrada, (v) => { C.anim.entrada = v; agendarPreviaC(); }));
+      t4.appendChild(linha("Velocidade da entrada (s)", stepper(C.anim, "duracao", 0.1, 1.2, 0.05, " s", 2)));
+      t4.appendChild(linha("Atraso entre linhas (s)", stepper(C.anim, "atraso", 0, 0.4, 0.02, " s", 2)));
+      t4.appendChild(linha("Texto começa depois de (s)", stepper(C.anim, "inicio", 0, 3, 0.1, " s", 1)));
+      t4.appendChild(linha("Saída suave (some devagar)", bolinha(C.anim.saida !== "nenhuma", (on) => { C.anim.saida = on ? "fade" : "nenhuma"; agendarPreviaC(); })));
+    }
+    caixaC.appendChild(t4);
+
+    const criar = el("div", "ed-btn verde", "🎬 Criar criativo no trecho IN/OUT");
+    criar.style.padding = "14px"; criar.style.fontSize = "15px";
+    criar.addEventListener("click", () => semPressa(criarCriativoC));
+    caixaC.appendChild(criar);
+    const m = el("div", "dica"); m.id = "crMsg"; caixaC.appendChild(m);
+  }
+
+  async function escolherImagemC() {
+    try {
+      const fs = require("uxp").storage.localFileSystem;
+      const arq = await fs.getFileForOpening({ types: ["png", "jpg", "jpeg", "webp", "bmp"] });
+      if (!arq) return;
+      C.imagem = arq.nativePath; C.nomeImg = String(arq.nativePath).split(/[\\/]/).pop();
+      desenharC(); agendarPreviaC();
+    } catch (e) { msgC("Não consegui abrir o seletor de imagens: " + (e && e.message ? e.message : e), true); }
+  }
+
+  async function seqEInOut() {
+    const ppro = require("premierepro");
+    const projeto = await ppro.Project.getActiveProject();
+    const seq = await projeto.getActiveSequence();
+    if (!seq) throw new Error("Nenhuma sequência ativa. Clique na sequência na timeline.");
+    const s = async (f) => { const t = await f(); return t && t.seconds !== undefined ? t.seconds : Number(t); };
+    const fimSeq = await s(() => seq.getEndTime());
+    let pin = 0, pout = 0;
+    try { pin = await s(() => seq.getInPoint()); pout = await s(() => seq.getOutPoint()); } catch (e) { pin = 0; pout = 0; }
+    const ini = Math.max(0, pin), fim = Math.min(pout, fimSeq);
+    return { ppro, projeto, seq, s, ini, fim, fimSeq };
+  }
+  async function lerInOutC(avisar) {
+    const r = await seqEInOut();
+    if (!(r.fim > r.ini + 0.3)) {
+      C.io = null;
+      if (avisar) msgC("Marque o trecho na timeline: cursor no começo e tecla I, cursor no fim e tecla O. Depois clique em Ler IN/OUT.", true);
+      return null;
+    }
+    C.io = { ini: r.ini, fim: r.fim };
+    return r;
+  }
+
+  async function escreverFalaC() {
+    try {
+      const r = await lerInOutC(true);
+      if (!r) { desenharC(); return; }
+      const { ppro, seq, s, ini, fim } = r;
+      const nA = await seq.getAudioTrackCount();
+      const escolha = ($("estAudio") && $("estAudio").value) || "auto";
+      const clipesDe = async (i) => {
+        const tr = await seq.getAudioTrack(i);
+        const lista = [];
+        for (const it of await tr.getTrackItems(1, false)) {
+          let des = false; try { des = !!(await it.isDisabled()); } catch (e) { des = false; }
+          const a = await s(() => it.getStartTime()), b = await s(() => it.getEndTime());
+          if (!des && b > ini + 0.05 && a < fim - 0.05) lista.push({ it, a, b });
+        }
+        return lista;
+      };
+      let clipes = [], ia = -1;
+      if (escolha !== "auto") { ia = parseInt(escolha, 10); clipes = ia < nA ? await clipesDe(ia) : []; }
+      else for (let i = 0; i < nA && !clipes.length; i++) { clipes = await clipesDe(i); ia = i; }
+      if (!clipes.length) { msgC("Não achei áudio de fala nesse trecho. Confira a trilha de áudio da fala (aba Legendas > Avançado).", true); return; }
+      clipes.sort((x, y) => x.a - y.a);
+      const partes = [];
+      let k = 0;
+      for (const c of clipes) {
+        k++;
+        mostrar("Lendo a fala (clipe " + k + " de " + clipes.length + ", trilha A" + (ia + 1) + ")...\nNa primeira vez pode levar alguns minutos. Não feche o Premiere.");
+        const pi = await c.it.getProjectItem();
+        const cl = await ppro.ClipProjectItem.cast(pi);
+        const arquivo = await cl.getMediaFilePath();
+        if (!arquivo) continue;
+        const noClipe = await s(() => c.it.getInPoint());
+        const a = Math.max(c.a, ini), b = Math.min(c.b, fim);
+        const rr = await chamar("/texto_trecho", { path: arquivo, inicio: noClipe + (a - c.a), fim: noClipe + (b - c.a),
+          model: $("modelo").value, device: $("dispositivo").value, language: "pt" });
+        if (rr.texto) partes.push(rr.texto);
+      }
+      const texto = partes.join(" ").replace(/\s+/g, " ").trim();
+      if (!texto) { msgC("Não encontrei fala nesse trecho.", true); return; }
+      C.textos[0].texto = texto;
+      desenharC(); agendarPreviaC();
+      msgC("Escrevi o que foi dito (trilha A" + (ia + 1) + "). Confira e corrija o texto abaixo, se precisar.");
+    } catch (e) { msgC("Não consegui ler a fala: " + (e && e.message ? e.message : e), true); }
+  }
+
+  async function criarCriativoC() {
+    let etapa = "ler o trecho";
+    try {
+      const r = await lerInOutC(true);
+      if (!r) { desenharC(); return; }
+      const { ppro, projeto, seq, s, ini, fim } = r;
+      const dur = fim - ini;
+      if (!C.textos.some((t) => t.texto.trim()) && !C.imagem) { msgC("Escolha uma imagem ou escreva um texto.", true); return; }
+      etapa = "achar uma trilha de vídeo livre";
+      const nV = await seq.getVideoTrackCount();
+      let iv = -1;
+      for (let i = nV - 1; i >= 1 && iv < 0; i--) {
+        const tr = await seq.getVideoTrack(i);
+        let livre = true;
+        for (const it of await tr.getTrackItems(1, false)) {
+          const a = await s(() => it.getStartTime()), b = await s(() => it.getEndTime());
+          if (b > ini + 0.05 && a < fim - 0.05) { livre = false; break; }
+        }
+        if (livre) iv = i;
+      }
+      if (iv < 0) { msgC("Não há trilha de vídeo livre nesse trecho. Adicione uma trilha de vídeo vazia (botão direito no nome das trilhas > Adicionar trilha) e tente de novo.", true); return; }
+      let LARG = 1920, ALT = 1080;
+      try { const fs = await seq.getFrameSize(); if (fs && fs.width > 0) { LARG = fs.width; ALT = fs.height; } } catch (e) { /* usa 1920x1080 */ }
+      etapa = "desenhar o criativo";
+      mostrar("Desenhando o criativo (" + dur.toFixed(1).replace(".", ",") + " s)...");
+      const ov = await chamar("/criativo/gerar", { def: defC(), w: LARG, h: ALT, fps: 30, dur });
+      etapa = "importar o criativo";
+      mostrar("Colocando o criativo na trilha V" + (iv + 1) + "...");
+      const { porNome } = await importarLegendas(ppro, projeto, [ov.arquivo], "Criativos PODCAST PRO");
+      const item = porNome.get(String(ov.arquivo).split(/[\\/]/).pop());
+      if (!item) throw new Error("o criativo não apareceu no projeto");
+      etapa = "colocar na sequência";
+      const ed = await ppro.SequenceEditor.getEditor(seq);
+      const tIni = await ppro.TickTime.createWithSeconds(ini);
+      await executar(projeto, "Criativo: colocar", () => ed.createOverwriteItemAction(item, tIni, iv, 0));
+      mostrar("Pronto! Criativo de " + dur.toFixed(1).replace(".", ",") + " s na trilha V" + (iv + 1) + " a partir de " + fmtT(ini) + ". É um clipe normal: arraste para mover ou puxe a ponta para mudar a duração. (Ctrl+Z desfaz.)");
+      msgC("Criativo colocado na trilha V" + (iv + 1) + ".");
+    } catch (e) { const m = "Não consegui criar o criativo (etapa: " + etapa + "): " + (e && e.message ? e.message : e); mostrar(m, true); msgC(m, true); }
+  }
+
+  async function abrirCriativos() {
+    MODO_CRIATIVO = true;
+    if (!C) C = carregarC();
+    if (!fontes.length) { try { fontes = (await (await fetch(SERVICO + "/estilos/fontes")).json()).fontes || []; } catch (e) { fontes = []; } }
+    desenharC(); agendarPreviaC();
+  }
+  Array.from(document.querySelectorAll("#abas .pill")).forEach((b) => b.addEventListener("click", () => {
+    if (b.id === "abaCriativos") abrirCriativos(); else MODO_CRIATIVO = false;
+  }));
 
   // estilos já criados aparecem na galeria ao abrir o painel
   (async function () { try { await recarregarEstilos(); } catch (e) { /* programa local ainda iniciando */ } })();

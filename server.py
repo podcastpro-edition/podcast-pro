@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.71"
+VERSAO = "1.0.72"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1853,6 +1853,216 @@ def _quadro_legenda(sprites, W, H, t, dur, anim=None):
     return quadro
 
 
+# ----------------------------------------------- Criativos: imagem em tela cheia + frases animadas
+ENTRADAS_IMAGEM = ("nenhuma", "fade", "zoom", "subir", "descer", "esquerda", "direita", "revelar")
+_CACHE_FUNDO = {}
+
+
+def _def_criativo(d):
+    """Normaliza a definição enviada pelo painel."""
+    def num(v, lo, hi, pad):
+        try:
+            return max(lo, min(hi, float(v)))
+        except Exception:
+            return pad
+    f = d.get("fundo") or {}
+    fundo = {
+        "imagem": str(d.get("imagem") or ""),
+        "cor": tuple(int(max(0, min(255, c))) for c in (f.get("cor") or (12, 12, 22))[:3]),
+        "escurecer": num(f.get("escurecer"), 0.0, 0.95, 0.4),
+        "desfoque": num(f.get("desfoque"), 0.0, 40.0, 0.0),
+        "zoomLento": bool(f.get("zoomLento", True)),
+        "entrada": f.get("entrada") if f.get("entrada") in ENTRADAS_IMAGEM else "fade",
+        "duracao": num(f.get("duracao"), 0.05, 2.5, 0.6),
+        "saida": bool(f.get("saida", True)),
+    }
+    textos = [t for t in (d.get("textos") or [])[:4] if isinstance(t, dict)]
+    camadas = _limpar_def({"linhas": [t.get("linha") or {} for t in textos], "anim": d.get("anim") or {}})
+    normais = []
+    for t, cam in zip(textos, camadas["linhas"]):
+        normais.append({"texto": str(t.get("texto") or ""), "larg": num(t.get("larg"), 0.3, 0.9, 0.8), "cam": cam})
+    anim = dict(camadas["anim"])
+    anim["inicio"] = num((d.get("anim") or {}).get("inicio"), 0.0, 3.0, 0.5)
+    return fundo, normais, anim
+
+
+def _quebrar_texto(txt, fonte, largura):
+    linhas = []
+    for par in str(txt).replace("\r", "").split("\n"):
+        atual = ""
+        for pal in par.split():
+            tentativa = (atual + " " + pal).strip()
+            if atual and fonte.getlength(tentativa) > largura:
+                linhas.append(atual)
+                atual = pal
+            else:
+                atual = tentativa
+        if atual:
+            linhas.append(atual)
+    return linhas
+
+
+def _sprites_criativo(normais, W, H):
+    sp = []
+    for t in normais:
+        cam, txt = dict(t["cam"]), t["texto"].strip()
+        if not txt:
+            continue
+        if cam.get("caixa"):
+            txt = txt.upper()
+        cam["caixa"] = False
+        tam = max(10, int(H * cam["tam"]))
+        fonte = _achar_fonte(cam["f"], tam)
+        linhas = _quebrar_texto(txt, fonte, int(W * min(0.88, t["larg"])))
+        n = len(linhas)
+        passo = cam["tam"] * 1.16
+        for k, ln in enumerate(linhas):
+            c = dict(cam)
+            c["y"] = cam["y"] + (k - (n - 1) / 2.0) * passo
+            c["rot"] = 0
+            sp += _sprites_legenda({"linhas": [c]}, ln, W, H)
+    return sp
+
+
+def _fundo_base(fundo, W, H):
+    from PIL import Image, ImageFilter
+    chave = (fundo["imagem"], os.path.getmtime(fundo["imagem"]) if os.path.isfile(fundo["imagem"]) else 0,
+             W, H, fundo["escurecer"], fundo["desfoque"], fundo["cor"])
+    if chave in _CACHE_FUNDO:
+        return _CACHE_FUNDO[chave]
+    if fundo["imagem"] and os.path.isfile(fundo["imagem"]):
+        im = Image.open(fundo["imagem"]).convert("RGB")
+        k = max(W / im.width, H / im.height)
+        im = im.resize((max(W, int(im.width * k + 0.5)), max(H, int(im.height * k + 0.5))), Image.LANCZOS)
+        x0, y0 = (im.width - W) // 2, (im.height - H) // 2
+        im = im.crop((x0, y0, x0 + W, y0 + H))
+    else:
+        im = Image.new("RGB", (W, H), fundo["cor"])
+    if fundo["desfoque"] > 0:
+        im = im.filter(ImageFilter.GaussianBlur(fundo["desfoque"] * H / 1080.0))
+    if fundo["escurecer"] > 0:
+        im = Image.blend(im, Image.new("RGB", (W, H), (0, 0, 0)), fundo["escurecer"])
+    if len(_CACHE_FUNDO) > 6:
+        _CACHE_FUNDO.clear()
+    _CACHE_FUNDO[chave] = im.convert("RGBA")
+    return _CACHE_FUNDO[chave]
+
+
+def _quadro_fundo(base, W, H, t, dur, f):
+    from PIL import Image
+    ent, d_ent = f["entrada"], f["duracao"]
+    k = 1.0 if ent == "nenhuma" else min(1.0, max(0.0, t / d_ent))
+    suave = 1 - (1 - k) ** 3
+    esc, alfa, dx, dy, rev = 1.0, 1.0, 0, 0, 1.0
+    if f["zoomLento"]:
+        esc *= 1.0 + 0.08 * min(1.0, t / max(dur, 0.1))
+    if ent == "fade":
+        alfa = suave
+    elif ent == "zoom":
+        esc *= 1.3 - 0.3 * suave
+        alfa = min(1.0, suave * 1.5)
+    elif ent == "subir":
+        dy = int((1 - suave) * H)
+    elif ent == "descer":
+        dy = -int((1 - suave) * H)
+    elif ent == "esquerda":
+        dx = -int((1 - suave) * W)
+    elif ent == "direita":
+        dx = int((1 - suave) * W)
+    elif ent == "revelar":
+        rev = suave
+    if f["saida"] and dur - t < 0.3:
+        alfa = min(alfa, max(0.0, (dur - t) / 0.3))
+    if esc > 1.001:
+        w2, h2 = W / esc, H / esc
+        img = base.resize((W, H), Image.BILINEAR, box=((W - w2) / 2, (H - h2) / 2, (W + w2) / 2, (H + h2) / 2))
+    else:
+        img = base
+    if rev < 0.999:
+        cw = max(1, int(W * rev))
+        tela = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        tela.paste(img.crop((0, 0, cw, H)), (0, 0))
+        img = tela
+    elif dx or dy:
+        tela = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        tela.paste(img, (dx, dy))
+        img = tela
+    if alfa < 0.999:
+        img = img.copy()
+        img.putalpha(img.getchannel("A").point(lambda v, a=alfa: int(v * a)))
+    return img
+
+
+def _quadro_criativo(base, sprites, anim, fundo, W, H, t, dur):
+    quadro = _quadro_fundo(base, W, H, t, dur, fundo).copy()
+    t_tx = anim["inicio"]
+    if sprites and t >= t_tx - 1e-6:
+        quadro.alpha_composite(_quadro_legenda(sprites, W, H, t - t_tx, max(0.1, dur - t_tx), anim))
+    return quadro
+
+
+def criativo_previa(d, saida_png, vertical=False):
+    W, H = (540, 960) if vertical else (960, 540)
+    fundo, normais, anim = _def_criativo(d)
+    base = _fundo_base(fundo, W, H)
+    sp = _sprites_criativo(normais, W, H)
+    quadro = _quadro_fundo(base, W, H, 99.0, 1e6, fundo).copy()
+    if sp:
+        quadro.alpha_composite(_quadro_legenda(sp, W, H, 99.0, 1e6, anim))
+    fundo_ = __import__("PIL.Image", fromlist=["Image"]).new("RGBA", (W, H), (36, 36, 52, 255))
+    fundo_.alpha_composite(quadro)
+    if d.get("guias"):
+        from PIL import ImageDraw
+        g = fundo_.copy()
+        dg = ImageDraw.Draw(g)
+        dg.rectangle((0, 0, W - 1, H - 1), outline=(255, 255, 255, 255), width=2)
+        mx, my = int(W * 0.05), int(H * 0.05)
+        dg.rectangle((mx, my, W - mx, H - my), outline=(255, 214, 0, 255), width=2)
+        dg.line((W // 2, 0, W // 2, H), fill=(0, 220, 255, 255), width=2)
+        dg.line((0, H // 2, W, H // 2), fill=(0, 220, 255, 255), width=2)
+        fundo_ = g
+    os.makedirs(os.path.dirname(saida_png), exist_ok=True)
+    fundo_.convert("RGB").save(saida_png)
+
+
+def criativo_gerar(d, W, H, fps, dur, saida):
+    """Desenha o criativo (imagem + frases + animações) num .mov com transparência."""
+    W, H = int(W) // 2 * 2, int(H) // 2 * 2
+    fps = float(fps)
+    dur = max(0.5, float(dur))
+    fundo, normais, anim = _def_criativo(d)
+    base = _fundo_base(fundo, W, H)
+    sp = _sprites_criativo(normais, W, H)
+    n = max(2, int(round(dur * fps)))
+    os.makedirs(os.path.dirname(saida), exist_ok=True)
+    p = subprocess.Popen(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba",
+                          "-s", "%dx%d" % (W, H), "-r", str(fps), "-i", "-", "-c:v", "qtrle", "-pix_fmt", "argb", saida],
+                         stdin=subprocess.PIPE)
+    t_ent = max(fundo["duracao"] if fundo["entrada"] != "nenhuma" else 0.0,
+                anim["inicio"] + (_tempo_entrada(anim, len(sp)) if sp else 0.0)) + 0.05
+    estatico = None
+    for k in range(n):
+        t = k / fps
+        parado = (not fundo["zoomLento"]) and t > t_ent and t < dur - 0.4
+        if parado:
+            if estatico is None:
+                estatico = _quadro_criativo(base, sp, anim, fundo, W, H, t_ent + 0.1, 1e6).tobytes()
+            p.stdin.write(estatico)
+        else:
+            p.stdin.write(_quadro_criativo(base, sp, anim, fundo, W, H, t, dur).tobytes())
+    p.stdin.close()
+    if p.wait() != 0:
+        raise RuntimeError("O ffmpeg falhou ao desenhar o criativo.")
+    return {"arquivo": saida, "quadros": n}
+
+
+def texto_do_trecho(caminho, inicio, fim, modelo, dispositivo, idioma):
+    cache, n, _ = palavras_do_trecho(caminho, inicio, fim, modelo, dispositivo, idioma)
+    with open(cache, encoding="utf-8") as f:
+        palavras = json.load(f)
+    return " ".join(p["w"] for p in palavras if p["s"] >= inicio - 0.3 and p["e"] <= fim + 0.3).strip()
+
+
 def _png_conta_gotas(tam=32):
     """Ícone de conta-gotas (branco com contorno escuro), ponta no canto inferior esquerdo."""
     from PIL import Image, ImageDraw
@@ -2621,6 +2831,24 @@ class Handler(BaseHTTPRequestHandler):
                                                      corpo.get("h", 1080), corpo.get("fps", 30),
                                                      os.path.join(pasta_ov, nome_ov),
                                                      bool(corpo.get("separado", False))))
+
+            if self.path == "/criativo/previa":
+                try:
+                    criativo_previa(corpo.get("def") or {}, os.path.join(_RAIZ, "painel", "img", "prev_criativo.png"),
+                                    corpo.get("formato") == "v")
+                    return self._responder({"ok": True})
+                except Exception as e:
+                    return self._responder({"erro": str(e)}, 400)
+            if self.path == "/criativo/gerar":
+                import time
+                nome = "criativo_%d.mov" % int(time.time())
+                return self._responder(criativo_gerar(corpo.get("def") or {}, corpo.get("w", 1920), corpo.get("h", 1080),
+                                                      corpo.get("fps", 30), corpo.get("dur", 5),
+                                                      os.path.join(_RAIZ, "cache", "criativos", nome)))
+            if self.path == "/texto_trecho":
+                return self._responder({"texto": texto_do_trecho(
+                    caminho, float(corpo.get("inicio", 0)), float(corpo.get("fim", 60)),
+                    corpo.get("model", "small"), corpo.get("device", "cpu"), corpo.get("language", "pt"))})
 
             if self.path == "/avaliar_audios":
                 cams = corpo.get("cameras") or {}
