@@ -3180,7 +3180,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
   const padraoC = () => ({
     imagem: "", nomeImg: "",
     fundo: { escurecer: 40, desfoque: 0, zoomLento: true, entrada: "fade", duracao: 0.6, saida: true },
-    textos: [novoTexto("Frase", 7, 45, "#FFFFFF", 78), novoTexto("Referência / autor (opcional)", 4, 72, "#FFB000", 60)],
+    textos: [novoTexto("Frase", 7, 45, "#FFFFFF", 78), novoTexto("Referências (opcional, uma por linha)", 4, 72, "#FFB000", 60)],
     anim: { entrada: "subir", duracao: 0.35, atraso: 0.12, saida: "fade", inicio: 0.5 },
     area: { x: 50, y: 50, larg: 80, alt: 50 }, pag: { ativo: false, linhas: 3 }, tempos: [],
     formato: "h", guias: false, abertoT: -1, animAberta: false, io: null,
@@ -3295,10 +3295,11 @@ $("btnTesteModelo").addEventListener("click", async () => {
       ab.addEventListener("click", () => { C.abertoT = C.abertoT === i ? -1 : i; desenharC(); agendarPreviaC(); });
       cab.appendChild(ab); t3.appendChild(cab);
       const ta = document.createElement("textarea");
-      ta.value = t.texto; ta.rows = i === 0 ? 4 : 2; ta.placeholder = i === 0 ? "Escreva a frase (ou use \"Escrever o que foi dito\")" : "Ex.: Provérbios 24:3";
+      ta.value = t.texto; ta.rows = i === 0 ? 5 : 3; ta.placeholder = i === 0 ? "Escreva a frase (ou use \"Escrever o que foi dito\")" : "Uma por linha, na ordem dos trechos. Ex.:\nMateus 5:5\nMateus 5:9";
       ta.style.width = "100%"; ta.style.boxSizing = "border-box"; ta.style.backgroundColor = "#0f0f16"; ta.style.color = "#e6e6ee"; ta.style.border = "1px solid #3a3a4c"; ta.style.borderRadius = "8px"; ta.style.padding = "6px";
       ta.addEventListener("input", () => { t.texto = ta.value; agendarPreviaC(); });
       t3.appendChild(ta);
+      if (i === 0) { const d0 = el("div", "rt", "Para a referência trocar, separe os trechos do texto com uma linha em branco: o 1º trecho usa a 1ª referência, o 2º usa a 2ª, e assim por diante."); d0.style.fontSize = "11px"; d0.style.color = "#8a8a9c"; t3.appendChild(d0); }
       if (i === 0) {
         t3.appendChild(linha("Entrar por partes, acompanhando a fala", bolinha(C.pag.ativo, (on) => { C.pag.ativo = on; desenharC(); agendarPreviaC(); })));
         if (C.pag.ativo) t3.appendChild(linha("Quantas linhas por vez", stepper(C.pag, "linhas", 1, 8, 1, "")));
@@ -3437,7 +3438,8 @@ $("btnTesteModelo").addEventListener("click", async () => {
         }
         if (livre) iv = i;
       }
-      if (iv < 0) { msgC("Não há trilha de vídeo livre nesse trecho. Adicione uma trilha de vídeo vazia (botão direito no nome das trilhas > Adicionar trilha) e tente de novo.", true); return; }
+      let criouTrilha = false;
+      if (iv < 0) { iv = nV; criouTrilha = true; } // nenhuma livre: ao colocar numa trilha acima da última, o Premiere cria a trilha
       let LARG = 1920, ALT = 1080;
       try { const fs = await seq.getFrameSize(); if (fs && fs.width > 0) { LARG = fs.width; ALT = fs.height; } } catch (e) { /* usa 1920x1080 */ }
       etapa = "desenhar o criativo";
@@ -3452,7 +3454,10 @@ $("btnTesteModelo").addEventListener("click", async () => {
       const ed = await ppro.SequenceEditor.getEditor(seq);
       const tIni = await ppro.TickTime.createWithSeconds(ini);
       await executar(projeto, "Criativo: colocar", () => ed.createOverwriteItemAction(item, tIni, iv, 0));
-      mostrar("Pronto! Criativo de " + dur.toFixed(1).replace(".", ",") + " s na trilha V" + (iv + 1) + " a partir de " + fmtT(ini) + ". É um clipe normal: arraste para mover ou puxe a ponta para mudar a duração. (Ctrl+Z desfaz.)");
+      let nV2 = nV;
+      try { nV2 = await seq.getVideoTrackCount(); } catch (e) { nV2 = nV; }
+      if (criouTrilha && nV2 <= nV) throw new Error("o Premiere não criou a nova trilha de vídeo. Adicione uma trilha de vídeo vazia (botão direito no nome das trilhas > Adicionar trilha) e tente de novo");
+      mostrar((criouTrilha ? "Não havia trilha livre, então criei a V" + (iv + 1) + ". " : "") + "Pronto! Criativo de " + dur.toFixed(1).replace(".", ",") + " s na trilha V" + (iv + 1) + " a partir de " + fmtT(ini) + ". É um clipe normal: arraste para mover ou puxe a ponta para mudar a duração. (Ctrl+Z desfaz.)");
       msgC("Criativo colocado na trilha V" + (iv + 1) + ".");
     } catch (e) { const m = "Não consegui criar o criativo (etapa: " + etapa + "): " + (e && e.message ? e.message : e); mostrar(m, true); msgC(m, true); }
   }

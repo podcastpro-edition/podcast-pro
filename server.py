@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.73"
+VERSAO = "1.0.74"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1961,40 +1961,68 @@ def _tempos_das_palavras(palavras, orig, ini, fim):
 
 
 def _preparar_texto(normais, extra, anim, W, H, dur):
-    """Devolve (paginas, sprites_fixos). Página = {t0, t1, sp}. A 1ª caixa (frase) usa a área e pode entrar em páginas."""
+    """Devolve (paginas, referencias).
+    paginas: [{t0, t1, sp, ref}] — a 1ª caixa (frase) usa a área; trechos separados por linha em branco viram blocos,
+    cada bloco usa a referência de mesma ordem (a 2ª caixa tem uma referência por linha); dentro do bloco o texto
+    pode entrar em partes de N linhas, no ritmo da fala. referencias: [{t0, t1, sp, r}]."""
     ar, pg = extra["area"], extra["pag"]
-    paginas, fixos = [], []
-    for i, t in enumerate(normais):
-        cam, txt = dict(t["cam"]), t["texto"].strip()
-        if not txt:
-            continue
-        if cam.get("caixa"):
-            txt = txt.upper()
-        if i == 0:
-            larg_px, alt_px = int(W * min(0.9, ar["larg"]) * 0.96), int(H * ar["alt"])
-            n_ref = pg["linhas"] if pg["ativo"] else None
-            linhas, tf = _ajustar_linhas(txt, cam, W, H, larg_px, alt_px, n_ref)
-            cx, cy = ar["x"], ar["y"]
-            if not pg["ativo"]:
-                paginas.append({"t0": anim["inicio"], "t1": dur, "sp": _sprites_linhas(linhas, cam, tf, cx, cy, W, H)})
-                continue
-            grupos = [linhas[k:k + pg["linhas"]] for k in range(0, len(linhas), pg["linhas"])]
-            palavras = txt.split()
-            tempos = _tempos_das_palavras(palavras, extra["tempos"], anim["inicio"], max(anim["inicio"] + 1.0, dur - 0.5))
-            idx = 0
-            marcas = []
-            for g in grupos:
-                marcas.append(tempos[min(idx, len(tempos) - 1)] if tempos else anim["inicio"])
-                idx += sum(len(l.split()) for l in g)
-            for k, g in enumerate(grupos):
+    paginas, refs_sp = [], []
+    if not normais:
+        return paginas, refs_sp
+    # ---- referências (uma por linha da 2ª caixa)
+    refs, cam_ref, larg_ref = [], None, 0.8
+    if len(normais) > 1:
+        cam_ref, larg_ref = dict(normais[1]["cam"]), normais[1]["larg"]
+        refs = [ln.strip() for ln in normais[1]["texto"].splitlines() if ln.strip()]
+        if cam_ref.get("caixa"):
+            refs = [r.upper() for r in refs]
+    # ---- frase
+    cam = dict(normais[0]["cam"])
+    txt = normais[0]["texto"].strip()
+    if cam.get("caixa"):
+        txt = txt.upper()
+    if txt:
+        blocos = [b.strip() for b in re.split(r"\n\s*\n", txt.replace("\r", "")) if b.strip()]
+        larg_px, alt_px = int(W * min(0.9, ar["larg"]) * 0.96), int(H * ar["alt"])
+        n_ref = pg["linhas"] if pg["ativo"] else None
+        tf = min(_ajustar_linhas(b, cam, W, H, larg_px, alt_px, n_ref)[1] for b in blocos)
+        fonte = _achar_fonte(cam["f"], max(10, int(H * tf)))
+        cx, cy = ar["x"], ar["y"]
+        palavras = txt.split()
+        tempos = _tempos_das_palavras(palavras, extra["tempos"], anim["inicio"], max(anim["inicio"] + 1.0, dur - 0.5))
+        idx, grupos = 0, []  # (bloco, linhas, índice da 1ª palavra)
+        for bi, b in enumerate(blocos):
+            linhas = _quebrar_texto(b.replace("\n", " "), fonte, larg_px)
+            passo = pg["linhas"] if pg["ativo"] else max(1, len(linhas))
+            palavras_bloco = 0
+            for k in range(0, len(linhas), passo):
+                g = linhas[k:k + passo]
+                grupos.append((bi, g, idx + palavras_bloco))
+                palavras_bloco += sum(len(l.split()) for l in g)
+            idx += palavras_bloco
+        if len(grupos) == 1:
+            paginas.append({"t0": anim["inicio"], "t1": dur, "sp": _sprites_linhas(grupos[0][1], cam, tf, cx, cy, W, H), "ref": 0})
+        else:
+            marcas = [tempos[min(g[2], len(tempos) - 1)] if tempos else anim["inicio"] for g in grupos]
+            for k, (bi, g, _i) in enumerate(grupos):
                 t0 = max(anim["inicio"] if k == 0 else 0.0, marcas[k] - 0.12)
                 t1 = max(t0 + 0.4, (marcas[k + 1] - 0.12) if k + 1 < len(grupos) else dur)
-                paginas.append({"t0": t0, "t1": t1, "sp": _sprites_linhas(g, cam, tf, cx, cy, W, H)})
-        else:
-            tam = max(10, int(H * cam["tam"]))
-            linhas = _quebrar_texto(txt, _achar_fonte(cam["f"], tam), int(W * min(0.88, t["larg"])))
-            fixos += _sprites_linhas(linhas, cam, cam["tam"], cam.get("x", 0.5), cam["y"], W, H)
-    return paginas, fixos
+                paginas.append({"t0": t0, "t1": t1, "sp": _sprites_linhas(g, cam, tf, cx, cy, W, H), "ref": bi})
+    # ---- referências: cada uma aparece enquanto o(s) bloco(s) dela estiver(em) na tela
+    if refs:
+        for r, texto_r in enumerate(refs):
+            if paginas:
+                meus = [p for p in paginas if min(p["ref"], len(refs) - 1) == r]
+                if not meus:
+                    continue
+                t0 = min(p["t0"] for p in meus)
+                t1 = dur if r == len(refs) - 1 else max(p["t1"] for p in meus)
+            else:
+                t0, t1 = anim["inicio"], dur
+            tam = max(10, int(H * cam_ref["tam"]))
+            ln = _quebrar_texto(texto_r, _achar_fonte(cam_ref["f"], tam), int(W * min(0.88, larg_ref)))
+            refs_sp.append({"t0": t0, "t1": t1, "r": r, "sp": _sprites_linhas(ln, cam_ref, cam_ref["tam"], cam_ref.get("x", 0.5), cam_ref["y"], W, H)})
+    return paginas, refs_sp
 
 
 def _fundo_base(fundo, W, H):
@@ -2066,10 +2094,12 @@ def _quadro_fundo(base, W, H, t, dur, f):
     return img
 
 
-def _quadro_criativo(base, paginas, fixos, anim, fundo, W, H, t, dur):
+def _quadro_criativo(base, paginas, refs, anim, fundo, W, H, t, dur):
     quadro = _quadro_fundo(base, W, H, t, dur, fundo).copy()
-    if fixos and t >= anim["inicio"] - 1e-6:
-        quadro.alpha_composite(_quadro_legenda(fixos, W, H, t - anim["inicio"], max(0.1, dur - anim["inicio"]), anim))
+    for rf in refs:
+        if rf["t0"] - 1e-6 <= t < rf["t1"]:
+            quadro.alpha_composite(_quadro_legenda(rf["sp"], W, H, t - rf["t0"], rf["t1"] - rf["t0"], anim))
+            break
     for pgn in paginas:
         if pgn["t0"] - 1e-6 <= t < pgn["t1"]:
             quadro.alpha_composite(_quadro_legenda(pgn["sp"], W, H, t - pgn["t0"], pgn["t1"] - pgn["t0"], anim))
@@ -2084,8 +2114,10 @@ def criativo_previa(d, saida_png, vertical=False):
     base = _fundo_base(fundo, W, H)
     paginas, fixos = _preparar_texto(normais, extra, anim, W, H, 60.0)
     quadro = _quadro_fundo(base, W, H, 99.0, 1e6, fundo).copy()
-    if fixos:
-        quadro.alpha_composite(_quadro_legenda(fixos, W, H, 99.0, 1e6, anim))
+    r0 = paginas[0]["ref"] if paginas else 0
+    mostrar = [f for f in fixos if f["r"] == min(r0, len(fixos) - 1)] or fixos[:1]
+    for f in mostrar:
+        quadro.alpha_composite(_quadro_legenda(f["sp"], W, H, 99.0, 1e6, anim))
     if paginas:
         quadro.alpha_composite(_quadro_legenda(paginas[0]["sp"], W, H, 99.0, 1e6, anim))
     fundo_ = Image.new("RGBA", (W, H), (36, 36, 52, 255))
