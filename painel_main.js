@@ -1992,6 +1992,23 @@ $("btnTesteModelo").addEventListener("click", async () => {
     achados.sort((a, b) => a.ini - b.ini);
     return { ppro, projeto, seq, achados };
   }
+  const fmt = (t) => { const m = Math.floor(t / 60), sg = t - m * 60; return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0") + ":" + sg.toFixed(1).padStart(4, "0"); };
+  function desenharLista(s) {
+    const c = $("listaLeg");
+    c.innerHTML = "";
+    lista.forEach((x, i) => {
+      const lin = document.createElement("div"); lin.className = "lin";
+      const tc = document.createElement("div"); tc.className = "tc"; tc.title = "Ir para este ponto da timeline";
+      tc.innerHTML = fmt(x.ini) + "<br>" + fmt(x.fim);
+      tc.addEventListener("click", async () => {
+        try { await s.seq.setPlayerPosition(await s.ppro.TickTime.createWithSeconds(x.ini)); } catch (e) { msg("Não consegui mover o cursor: " + (e && e.message ? e.message : e), true); }
+      });
+      const tx = document.createElement("input"); tx.type = "text"; tx.className = "tx"; tx.value = x.texto; tx.disabled = !x.estilo;
+      tx.addEventListener("input", () => lin.classList.toggle("mudou", tx.value.trim() !== x.texto));
+      lin.appendChild(tc); lin.appendChild(tx); c.appendChild(lin);
+    });
+  }
+  const valoresLista = () => Array.from(document.querySelectorAll("#listaLeg .tx")).map((e) => e.value);
   $("btnLerTodas").addEventListener("click", async () => {
     try {
       msg("Lendo as legendas...");
@@ -2000,7 +2017,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       const r = await chamar("/legenda/info_lote", { nomes: s.achados.map((a) => a.nome) });
       const semTexto = r.infos.filter((x) => !x).length;
       lista = s.achados.map((a, i) => ({ ...a, texto: r.infos[i] ? r.infos[i].texto : "", estilo: r.infos[i] ? r.infos[i].estilo : null }));
-      $("txtTodasLeg").value = lista.map((x) => x.texto).join("\n");
+      desenharLista(s);
       msg(lista.length + " legendas carregadas." + (semTexto ? " " + semTexto + " sem texto guardado (feitas por versão antiga): não serão alteradas." : "") + " Corrija e clique em Aplicar.");
     } catch (e) { msg(e && e.message ? e.message : String(e), true); }
   });
@@ -2008,9 +2025,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     let etapa = "começar";
     try {
       if (!lista.length) return msg("Clique primeiro em Carregar.", true);
-      const linhas = $("txtTodasLeg").value.split(/\r?\n/);
-      while (linhas.length > lista.length && linhas[linhas.length - 1].trim() === "") linhas.pop();
-      if (linhas.length !== lista.length) return msg("O número de linhas mudou (" + linhas.length + " em vez de " + lista.length + "). Cada legenda precisa continuar numa linha só. Se quiser uma legenda vazia, deixe a linha em branco.", true);
+      const linhas = valoresLista();
       const mudadas = [];
       linhas.forEach((t, i) => { const n = t.trim(); if (lista[i].estilo && n && n !== lista[i].texto) mudadas.push(i); });
       if (!mudadas.length) return msg("Nenhuma linha foi alterada.");
