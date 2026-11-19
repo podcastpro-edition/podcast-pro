@@ -2278,6 +2278,37 @@ async function audioDaSequencia(ppro, seq) {
   return { wav, pessoas, recorte };
 }
 
+// Pinta clipes da timeline com a cor de rótulo do Premiere (descobre sozinho qual comando existe nesta versão)
+const ROTULO = { vermelho: 6, laranja: 7, roxo: 8 }; // Rose, Mango, Purple (ordem padrão dos rótulos do Premiere)
+const nomesDoObjeto = (o) => { const r = new Set(); try { let p = o; for (let k = 0; p && k < 5; k++) { Object.getOwnPropertyNames(p).forEach((n) => r.add(n)); p = Object.getPrototypeOf(p); } } catch (e) { /* segue */ } return Array.from(r); };
+async function pintarClipes(projeto, trabalhos) { // trabalhos: [{ it, indice }]
+  const res = { ok: false, metodo: null, nomes: [] };
+  if (!trabalhos.length) return res;
+  const amostra = trabalhos[0].it;
+  res.nomes = nomesDoObjeto(amostra).filter((n) => /colou?r|label/i.test(n));
+  const acoes = ["createSetColorLabelAction", "createSetLabelColorAction", "createSetColorIndexAction", "createSetColorAction"];
+  const nomeAcao = acoes.find((n) => typeof amostra[n] === "function");
+  try {
+    if (nomeAcao) {
+      res.metodo = nomeAcao;
+      for (let k = 0; k < trabalhos.length; k += 25) {
+        const lote = trabalhos.slice(k, k + 25);
+        projeto.lockedAccess(() => { projeto.executeTransaction((c) => { for (const t of lote) c.addAction(t.it[nomeAcao](t.indice)); }, "Virais: cor dos clipes"); });
+        await dormir(400);
+      }
+      res.ok = true; return res;
+    }
+    const diretos = ["setColorLabel", "setLabelColor", "setColorIndex", "setColor"];
+    const nomeDireto = diretos.find((n) => typeof amostra[n] === "function");
+    if (nomeDireto) {
+      res.metodo = nomeDireto;
+      for (const t of trabalhos) await t.it[nomeDireto](t.indice);
+      res.ok = true;
+    }
+  } catch (e) { res.erro = e && e.message ? e.message : String(e); }
+  return res;
+}
+
 // Cria uma sequência nova só com os trechos escolhidos (mesmos cortes de câmera e áudio da sequência original),
 // um depois do outro, cada um com marcador na cor da sua faixa (🔴 🟠 🟣)
 async function montarSequenciaVirais(ppro, projeto, origem, lista) {
@@ -2432,9 +2463,25 @@ async function montarSequenciaVirais(ppro, projeto, origem, lista) {
     for (const k of Object.keys(itens)) if (k.indexOf("A:") === 0) await executar(projeto, "Virais: limpar", () => itens[k].clip.createClearInOutPointsAction());
     try { for (let i = 0; i < baseA; i++) await (await sequencia.getAudioTrack(i)).setMute(true); } catch (e) { avisos.push("não consegui silenciar o áudio das câmeras"); }
 
-    etapa = "marcar os trechos com as cores";
-    const mk = await marcarVirais(ppro, projeto, sequencia, janelas);
-    mostrar("Pronto: sequência " + nomeSeq + " com " + lista.length + " trechos (" + Math.round(saida) + " s), na ordem da lista (maior chance primeiro). Cada trecho tem um marcador " + (mk.marcadores ? (mk.cores ? "colorido" : "com o emoji da faixa no nome") : "(não consegui marcar)") + ": 🔴 91–100%, 🟠 61–90%, 🟣 abaixo.\n" + (avisos.length ? "AVISOS:\n- " + avisos.join("\n- ") : ""));
+    etapa = "pintar os clipes com as cores";
+    const trabalhosCor = [];
+    const nVf = await sequencia.getVideoTrackCount(), nAf = await sequencia.getAudioTrackCount();
+    const doJanela = (ini) => { for (const w of janelas) if (ini >= w.seqIni - 0.05 && ini < w.seqFim - 0.01) return w; return null; };
+    for (let i = 0; i < nVf + nAf; i++) {
+      const tr = i < nVf ? await sequencia.getVideoTrack(i) : await sequencia.getAudioTrack(i - nVf);
+      for (const it of await tr.getTrackItems(1, false)) {
+        const w = doJanela(await sec(() => it.getStartTime()));
+        if (w) trabalhosCor.push({ it, indice: ROTULO[faixaViral(w.nota).nome] });
+      }
+    }
+    const cor = await pintarClipes(projeto, trabalhosCor);
+    let textoCor;
+    if (cor.ok) textoCor = "Os clipes de cada trecho foram pintados: 🔴 vermelho (91–100%), 🟠 laranja (61–90%), 🟣 roxo (abaixo).";
+    else {
+      const mk = await marcarVirais(ppro, projeto, sequencia, janelas);
+      textoCor = "Não consegui pintar os clipes" + (cor.erro ? " (" + cor.erro + ")" : "") + "; coloquei marcadores " + (mk.marcadores ? "com o emoji da faixa no nome" : "(também falhou)") + ". Comandos de cor que o Premiere me mostrou: " + (cor.nomes.length ? cor.nomes.join(", ") : "nenhum") + ".";
+    }
+    mostrar("Pronto: sequência " + nomeSeq + " com " + lista.length + " trechos (" + Math.round(saida) + " s), na ordem da lista (maior chance primeiro).\n" + textoCor + "\n" + (avisos.length ? "AVISOS:\n- " + avisos.join("\n- ") : ""));
   } catch (e) {
     mostrar((avisos.length ? "Avisos:\n- " + avisos.join("\n- ") + "\n\n" : "") + "Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
   }
