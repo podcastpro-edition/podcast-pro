@@ -2033,7 +2033,7 @@ $("btnVertical").addEventListener("click", () => semPressa(async () => {
     etapa = "procurar os rostos";
     for (const [c, caminho] of Object.entries(cameras)) { if (!caminho || caminho === "undefined" || caminho === "null") throw new Error("o Premiere não me deu o caminho do arquivo da câmera " + c + " (veio: " + JSON.stringify(caminho) + ")"); }
     const rr = await comRelogio("Procurando os rostos para enquadrar (" + pecas.length + " trechos)...\n(só isso é calculado; os cortes já feitos são reaproveitados)", () => chamar("/crops_vertical", {
-      cameras, geral: PODCAST.geral, pecas: pecas.map((p) => ({ arq: p.arq })),
+      path: Object.values(cameras)[0], cameras, geral: PODCAST.geral, pecas: pecas.map((p) => ({ arq: p.arq })),
     }));
     pecas.forEach((p, i) => { p.crops = rr.crops[i]; });
 
