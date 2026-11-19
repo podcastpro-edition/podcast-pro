@@ -2246,7 +2246,7 @@ async function audioDaSequencia(ppro, seq) {
     for (const it of its.slice(0, 3)) { try { const cp = await ppro.ClipProjectItem.cast(await it.getProjectItem()); camerasVideo.add(norm(await cp.getMediaFilePath())); } catch (e) { /* segue */ } }
   }
   const nA = await seq.getAudioTrackCount();
-  const porArquivo = {}; // caminho -> { dur, trilhas: Set }
+  const porArquivo = {}; // caminho -> { dur, trilhas: Set, r0, r1 }
   for (let ai = 0; ai < nA; ai++) {
     const tr = await seq.getAudioTrack(ai);
     let muda = false; try { if (typeof tr.isMuted === "function") muda = !!(await tr.isMuted()); } catch (e) { muda = false; }
@@ -2256,9 +2256,13 @@ async function audioDaSequencia(ppro, seq) {
       let caminho = null;
       try { const cp = await ppro.ClipProjectItem.cast(await it.getProjectItem()); caminho = await cp.getMediaFilePath(); } catch (e) { continue; }
       if (!caminho || camerasVideo.has(norm(caminho))) continue;
-      const f = porArquivo[caminho] || (porArquivo[caminho] = { dur: 0, ativas: new Set(), todas: new Set() });
+      const f = porArquivo[caminho] || (porArquivo[caminho] = { dur: 0, ativas: new Set(), todas: new Set(), r0: Infinity, r1: -Infinity });
       f.todas.add(ai);
-      if (!muda && !des) { f.dur += (await sec(() => it.getEndTime())) - (await sec(() => it.getStartTime())); f.ativas.add(ai); }
+      if (!muda && !des) {
+        const d = (await sec(() => it.getEndTime())) - (await sec(() => it.getStartTime()));
+        f.dur += d; f.ativas.add(ai);
+        try { const e0 = await sec(() => it.getInPoint()); f.r0 = Math.min(f.r0, e0); f.r1 = Math.max(f.r1, e0 + d); } catch (e) { /* sem recorte */ }
+      }
     }
   }
   const lista = Object.entries(porArquivo).filter(([, f]) => f.dur > 0).sort((a, b) => {
@@ -2270,7 +2274,8 @@ async function audioDaSequencia(ppro, seq) {
   const todas = Array.from(f.todas).sort((a, b) => a - b);
   const base = todas[0];
   const pessoas = (Array.from(f.ativas).sort((a, b) => a - b)).map((ai, k) => ({ nome: "Voz " + (k + 1), canal: Math.max(0, ai - base), camera: "V1" }));
-  return { wav, pessoas };
+  const recorte = isFinite(f.r0) && isFinite(f.r1) && f.r1 > f.r0 ? [f.r0, f.r1] : null;
+  return { wav, pessoas, recorte };
 }
 
 let VIRAIS = [];
@@ -2363,10 +2368,10 @@ $("btnViral").addEventListener("click", () => semPressa(async () => {
     if (!origem) return mostrar("Nenhuma sequência ativa (deixe a PODCAST ativa).", true);
     etapa = "achar o áudio da fala na sequência ativa";
     mostrar("Olhando a sequência para achar o áudio da fala...");
-    const { wav, pessoas: pessoasAudio } = await audioDaSequencia(ppro, origem);
+    const { wav, pessoas: pessoasAudio, recorte: recorteAudio } = await audioDaSequencia(ppro, origem);
     etapa = "procurar os melhores momentos";
     const [dmin, dmax] = String(VIRAL_DUR).split("-").map(Number);
-    const pedir = () => comRelogio("Procurando os trechos com mais chance de prender...", () => chamar("/virais", { path: wav, min: dmin, max: dmax, quantidade: 10 }));
+    const pedir = () => comRelogio("Procurando os trechos com mais chance de prender...", () => chamar("/virais", { path: wav, min: dmin, max: dmax, quantidade: 10, recorte: recorteAudio }));
     let r;
     try { r = await pedir(); } catch (e) {
       if (!/Falta a transcri/.test(e && e.message ? e.message : "")) throw e;

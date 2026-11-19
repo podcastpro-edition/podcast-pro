@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.104"
+VERSAO = "1.0.105"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1321,9 +1321,14 @@ def legendas_palavra_a_palavra(palavras, max_palavras=2, max_chars=16):
     return saida
 
 
-def transcricao_completa(palavras, wav):
-    """True se a transcrição guardada cobre o podcast (e não só um trechinho feito antes pelas legendas In/Out)."""
+def transcricao_completa(palavras, wav, recorte=None):
+    """True se a transcrição guardada cobre o que a sequência usa do áudio (recorte = [ini, fim] em segundos do arquivo),
+    ou, sem recorte, metade do arquivo. Não conta um trechinho feito antes pelas legendas In/Out."""
     try:
+        if recorte:
+            r0, r1 = float(recorte[0]), float(recorte[1])
+            dentro = [p for p in palavras if r0 <= p["s"] <= r1]
+            return len(dentro) >= 30 and (dentro[-1]["e"] - dentro[0]["s"]) >= 0.6 * (r1 - r0)
         if not palavras or len(palavras) < 30:
             return False
         return (palavras[-1]["e"] - palavras[0]["s"]) >= 0.5 * duracao_total(wav)
@@ -2987,7 +2992,7 @@ _EMOCAO = ["amor", "deus", "perdao", "perdoa", "medo", "dor", "vergonha", "famil
 _INICIO_FRACO = ("e", "mas", "entao", "ai", "porque", "que", "ou", "pois", "tipo", "ne", "so")
 
 
-def trechos_virais(wav, dmin=20.0, dmax=60.0, quantidade=8):
+def trechos_virais(wav, dmin=20.0, dmax=60.0, quantidade=8, recorte=None):
     """Procura, na transcrição por palavra, trechos com cara de corte curto que prende: começa com gancho,
     pensamento completo, emoção, ritmo bom. Nota de 0 a 100 + motivos. Tempos = tempos do arquivo de áudio."""
     cache = os.path.splitext(wav)[0] + "_palavras.json"
@@ -2996,8 +3001,10 @@ def trechos_virais(wav, dmin=20.0, dmax=60.0, quantidade=8):
                            "'Transcrever o podcast (por palavra)' (só precisa fazer uma vez).")
     with open(cache, encoding="utf-8") as f:
         palavras = json.load(f)
-    if not transcricao_completa(palavras, wav):
+    if not transcricao_completa(palavras, wav, recorte):
         raise RuntimeError("Falta a transcrição completa do podcast (a guardada cobre só um pedaço).")
+    if recorte:  # só o que a sequência usa
+        palavras = [p for p in palavras if float(recorte[0]) <= p["s"] <= float(recorte[1])]
     frases, atual = [], []
     for p in palavras:
         if atual and p["s"] - atual[-1]["e"] > 0.9:
@@ -3379,7 +3386,7 @@ class Handler(BaseHTTPRequestHandler):
 
             if self.path == "/virais":
                 try:
-                    return self._responder(trechos_virais(caminho, float(corpo.get("min", 20)), float(corpo.get("max", 60)), int(corpo.get("quantidade", 8))))
+                    return self._responder(trechos_virais(caminho, float(corpo.get("min", 20)), float(corpo.get("max", 60)), int(corpo.get("quantidade", 8)), corpo.get("recorte")))
                 except Exception as e:
                     return self._responder({"erro": str(e)}, 400)
             if self.path == "/crops_vertical":
