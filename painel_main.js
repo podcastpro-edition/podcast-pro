@@ -2001,7 +2001,7 @@ $("btnVertical").addEventListener("click", () => semPressa(async () => {
       if (!lista.length) throw new Error("a trilha " + cam + " não tem nada entre " + INICIO + " s e " + FIM + " s da sequência");
       const comArq = lista.find((c) => c.caminho);
       if (!comArq) throw new Error("não consegui ler o arquivo da trilha " + cam);
-      videos[cam] = lista; cameras[cam] = comArq.caminho;
+      videos[cam] = lista; cameras[cam] = String(comArq.caminho);
     }
     const doItem = (cam, T) => { // trecho (item) da câmera que cobre o tempo T, ou o mais próximo
       const l = videos[cam];
@@ -2031,6 +2031,7 @@ $("btnVertical").addEventListener("click", () => semPressa(async () => {
 
     // ---- 2. só procura os rostos (o servidor guarda o resultado para repetir mais rápido)
     etapa = "procurar os rostos";
+    for (const [c, caminho] of Object.entries(cameras)) { if (!caminho || caminho === "undefined" || caminho === "null") throw new Error("o Premiere não me deu o caminho do arquivo da câmera " + c + " (veio: " + JSON.stringify(caminho) + ")"); }
     const rr = await comRelogio("Procurando os rostos para enquadrar (" + pecas.length + " trechos)...\n(só isso é calculado; os cortes já feitos são reaproveitados)", () => chamar("/crops_vertical", {
       cameras, geral: PODCAST.geral, pecas: pecas.map((p) => ({ arq: p.arq })),
     }));

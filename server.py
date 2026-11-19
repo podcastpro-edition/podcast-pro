@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.91"
+VERSAO = "1.0.92"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -3272,9 +3272,9 @@ class Handler(BaseHTTPRequestHandler):
                     corpo.get("semente", 1), corpo.get("cache"), corpo.get("prefixo", ""))})
 
             if self.path == "/crops_vertical":
-                for o in corpo["cameras"].values():
-                    if not os.path.isfile(o):
-                        return self._responder({"erro": f"arquivo não encontrado: {o}"}, 400)
+                for nome_c, o in corpo["cameras"].items():
+                    if not isinstance(o, str) or not os.path.isfile(o):
+                        return self._responder({"erro": f"arquivo da câmera {nome_c} não encontrado: {o!r}"}, 400)
                 return self._responder(crops_vertical(corpo["cameras"], corpo.get("geral", "V1"), corpo["pecas"]))
             if self.path == "/plano_vertical":
                 for o in corpo["cameras"].values():
