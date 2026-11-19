@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.102",
-  "notas": "Corrigir buracos: so mexe nos clipes novos e garante uma camera ligada em cada buraco",
+  "versao": "1.0.103",
+  "notas": "Erro de trilhas faltando mostra o nome da sequencia ativa",
   "arquivos": {
-    "server.py": "95d726f70b991b24acd68be5e44c24f2455aae221eeca18d47a4cd8ffbf2536d",
+    "server.py": "bc451fcd93276500ccd185ed50f7a204037bfe5e13f8606d59dd7881b29a26e8",
     "painel_index.html": "e27141dec7284f2bf2a2038cd63e17e9b3f955384d1a6ef966049edbe730ecd2",
-    "painel_main.js": "bf8a3ea452ceeddff79cbc4cff121d477062ed8101e43544724b6eb21b50dfcf",
+    "painel_main.js": "290b8606c1a8893f5150e6c1a0d5ee10c75d58a76200e3a082e4b33d11a6d397",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",

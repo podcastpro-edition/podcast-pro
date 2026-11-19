@@ -876,7 +876,7 @@ async function wavDoPodcast(ppro, sequencia) {
   for (const v of camerasUsadas()) if (parseInt(v.slice(1), 10) > nV) faltam.push(v);
   for (const p of pessoas) if (p.trilhaAudio + 1 > nA) faltam.push("A" + (p.trilhaAudio + 1));
   if (faltam.length) {
-    throw new Error("Esta sequência não tem as trilhas: " + Array.from(new Set(faltam)).join(", ") +
+    throw new Error("A sequência ativa agora (\"" + (sequencia.name || "sem nome") + "\", com " + nV + " trilhas de vídeo e " + nA + " de áudio) não tem as trilhas: " + Array.from(new Set(faltam)).join(", ") +
       ".\nAbra a sequência do podcast (câmeras no vídeo e microfones no áudio) ou ajuste os números " +
       "em \"Participantes e apresentador\" para ficarem iguais aos da sua timeline.");
   }
