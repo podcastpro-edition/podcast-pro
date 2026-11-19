@@ -1,8 +1,8 @@
 {
-  "versao": "1.0.95",
-  "notas": "Virais: transcreve sozinho, botoes de duracao, faixas de cor (vermelho/laranja/roxo), marcadores e In/Out na sequencia",
+  "versao": "1.0.96",
+  "notas": "Virais: transcricao curta guardada nao conta; transcreve o podcast inteiro sozinho",
   "arquivos": {
-    "server.py": "701d5be03989e302dd110c09f650f15d1a787546add0f68d5ebd9e46cd921562",
+    "server.py": "43667a1d12a56b4d39583b88e354a8120d313164f9689961a60c8cb9fafe1ea7",
     "painel_index.html": "60680a26791dd8c2caedffafac3a6fec26ee18425ff96b68dfef43e198cc4a5d",
     "painel_main.js": "6ac3cc7efbb4c73a408efefad6fe94dea424829e0aea6f53eb4090bb3e7e55e0",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",

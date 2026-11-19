@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.95"
+VERSAO = "1.0.96"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1321,6 +1321,16 @@ def legendas_palavra_a_palavra(palavras, max_palavras=2, max_chars=16):
     return saida
 
 
+def transcricao_completa(palavras, wav):
+    """True se a transcrição guardada cobre o podcast (e não só um trechinho feito antes pelas legendas In/Out)."""
+    try:
+        if not palavras or len(palavras) < 30:
+            return False
+        return (palavras[-1]["e"] - palavras[0]["s"]) >= 0.5 * duracao_total(wav)
+    except Exception:
+        return False
+
+
 def legendas_podcast(wav, pessoas, modelo, dispositivo, idioma, reutilizar):
     base = os.path.splitext(wav)[0]
     cache = base + "_palavras.json"
@@ -1328,6 +1338,8 @@ def legendas_podcast(wav, pessoas, modelo, dispositivo, idioma, reutilizar):
     if reutilizar and os.path.isfile(cache):
         with open(cache, encoding="utf-8") as f:
             palavras = json.load(f)
+        if not transcricao_completa(palavras, wav):
+            palavras = None  # só tinha um trecho: transcreve o podcast inteiro
     reaproveitou = palavras is not None
     if palavras is None:
         audio = misturar_microfones(wav, [p["canal"] for p in pessoas])
@@ -2984,8 +2996,8 @@ def trechos_virais(wav, dmin=20.0, dmax=60.0, quantidade=8):
                            "'Transcrever o podcast (por palavra)' (só precisa fazer uma vez).")
     with open(cache, encoding="utf-8") as f:
         palavras = json.load(f)
-    if len(palavras) < 30:
-        raise RuntimeError("A transcrição está muito curta para procurar trechos.")
+    if not transcricao_completa(palavras, wav):
+        raise RuntimeError("Falta a transcrição completa do podcast (a guardada cobre só um pedaço).")
     frases, atual = [], []
     for p in palavras:
         if atual and p["s"] - atual[-1]["e"] > 0.9:
