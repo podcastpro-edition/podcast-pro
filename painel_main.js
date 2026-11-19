@@ -1269,6 +1269,13 @@ async function montarPodcastInterno(limite, opcoes = {}) {
       }
     } catch (e) { falhaMute = " (não consegui silenciar: " + (e && e.message ? e.message : e) + ")"; }
 
+    // tapa sozinho os buracos (trechos sem nenhuma câmera ligada, que aparecem pretos)
+    try {
+      etapa = "tapar buracos de câmera";
+      const rb = await corrigirBuracosSeq(ppro, projeto, sequencia);
+      falhaMute += "\nBuracos de câmera: " + (rb.n ? rb.texto : "nenhum");
+    } catch (e) { falhaMute += "\nNão consegui tapar buracos sozinho (use o botão Corrigir buracos): " + (e && e.message ? e.message : e); }
+
     // resumo do que ficou na sequência
     const linhas = [];
     const nV = await sequencia.getVideoTrackCount();
@@ -2378,14 +2385,10 @@ $("btnViral").addEventListener("click", () => semPressa(async () => {
 }));
 
 // --- Corrigir buracos: trechos da sequência em que nenhuma câmera está ligada (aparece preto) ---
-$("btnBuracos").addEventListener("click", () => semPressa(async () => {
+async function corrigirBuracosSeq(ppro, projeto, seq) { // tapa os trechos sem câmera ligada; devolve {n, total, texto}
   let etapa = "começando";
   const avisos = [];
-  try {
-    const ppro = require("premierepro");
-    const projeto = await ppro.Project.getActiveProject();
-    const seq = await projeto.getActiveSequence();
-    if (!seq) return mostrar("Nenhuma sequência ativa (deixe a PODCAST ativa).", true);
+  const mostrarEtapa = (t) => mostrar(t);
     const sec = async (f) => { const t = await f(); return t && t.seconds !== undefined ? t.seconds : Number(t); };
     const cams = camerasUsadas();
     const nV = await seq.getVideoTrackCount();
@@ -2416,7 +2419,7 @@ $("btnBuracos").addEventListener("click", () => semPressa(async () => {
       if (c.ini - fimCob > 0.02) buracos.push({ g0: fimCob, g1: c.ini, ativo: camAnt || c.cam });
       if (c.fim >= fimCob) { fimCob = c.fim; camAnt = c.cam; }
     }
-    if (!buracos.length) return mostrar("Não achei buracos: sempre tem uma câmera ligada do começo ao fim.");
+    if (!buracos.length) return { n: 0, total: 0, texto: "Não achei buracos: sempre tem uma câmera ligada do começo ao fim." };
     const total = buracos.reduce((s, b) => s + (b.g1 - b.g0), 0);
     if (buracos.length > 150) throw new Error("achei " + buracos.length + " buracos; é coisa demais para corrigir sozinho. Refaça a montagem.");
 
@@ -2466,9 +2469,19 @@ $("btnBuracos").addEventListener("click", () => semPressa(async () => {
         await dormir(500);
       }
     }
-    mostrar("Pronto: tapei " + buracos.length + " buraco(s), " + total.toFixed(1) + " s no total, usando a câmera do trecho anterior.\nConfira passando pelos pontos: " + buracos.slice(0, 6).map((b) => fmt(b.g0)).join(", ") + (buracos.length > 6 ? "..." : "") + (avisos.length ? "\nAvisos:\n- " + avisos.join("\n- ") : ""));
+    return { n: buracos.length, total, avisos, texto: "tapei " + buracos.length + " buraco(s), " + total.toFixed(1) + " s no total, usando a câmera do trecho anterior (" + buracos.slice(0, 6).map((b) => fmt(b.g0)).join(", ") + (buracos.length > 6 ? "..." : "") + ")" + (avisos.length ? "\nAvisos:\n- " + avisos.join("\n- ") : "") };
+}
+
+$("btnBuracos").addEventListener("click", () => semPressa(async () => {
+  try {
+    const ppro = require("premierepro");
+    const projeto = await ppro.Project.getActiveProject();
+    const seq = await projeto.getActiveSequence();
+    if (!seq) return mostrar("Nenhuma sequência ativa (deixe a PODCAST ativa).", true);
+    const r = await corrigirBuracosSeq(ppro, projeto, seq);
+    mostrar(r.n ? "Pronto: " + r.texto : r.texto);
   } catch (e) {
-    mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
+    mostrar("Erro ao corrigir buracos:\n" + (e && e.message ? e.message : e), true);
   }
 }));
 
