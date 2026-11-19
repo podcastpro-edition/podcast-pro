@@ -3047,14 +3047,14 @@ $("btnTesteModelo").addEventListener("click", async () => {
   // opções de uma linha (aparecem só para a linha escolhida)
   function opcoesLinha(l, i, semRemover, semPosicao) {
     const c = el("div", "ed-opc");
-    c.appendChild(el("div", "rt", "Fonte")); c.lastChild.style.fontSize = "12px";
+    c.appendChild(el("div", "rt", "Fonte")); c.lastChild.style.fontSize = "14px";
     c.appendChild(seletorFonte(l));
     c.appendChild(linha("Tamanho", stepper(l, "tam", 2, 30, 0.5, "%", 1)));
     if (!semPosicao) c.appendChild(linha("Altura na tela", stepper(l, "y", 5, 95, 1, "%")));
     if (!semPosicao) c.appendChild(linha("Posição lateral", stepper(l, "x", 10, 90, 1, "%")));
     if (!semPosicao) c.appendChild(linha("Inclinação", stepper(l, "rot", -30, 30, 1, "°")));
     c.appendChild(linha("Tudo em MAIÚSCULAS", simNao(l, "caixa")));
-    c.appendChild(el("div", "rt", "Cor do texto")); c.lastChild.style.fontSize = "12px";
+    c.appendChild(el("div", "rt", "Cor do texto")); c.lastChild.style.fontSize = "14px";
     c.appendChild(campoCor(l, "cor"));
     const efeito = (chave, rotulo, extra) => {
       const blk = el("div");
@@ -3104,7 +3104,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     topo.appendChild(el("div", "ed-tit", "Criar um estilo"));
     const blocoSalvar = () => { // nome + botão salvar (nome sempre junto do Salvar)
       const w = el("div"); w.style.marginTop = "8px";
-      const r = el("div", "rt", "Nome do estilo"); r.style.fontSize = "12px"; w.appendChild(r);
+      const r = el("div", "rt", "Nome do estilo"); r.style.fontSize = "14px"; r.style.margin = "0"; w.appendChild(r);
       const campo = document.createElement("input"); campo.type = "text"; campo.className = "edNomeCampo"; campo.value = E.nome || ""; campo.placeholder = "Ex.: Meu estilo 1";
       campo.addEventListener("input", () => { E.nome = campo.value; for (const o of Array.from(document.querySelectorAll(".edNomeCampo"))) if (o !== campo) o.value = campo.value; });
       w.appendChild(campo);
@@ -3191,7 +3191,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       moldura.appendChild(b);
     });
     prev.appendChild(moldura);
-    const nm = (E.marc || []).length; const dica = el("div", "rt", (E.msgMov ? E.msgMov + ". " : "") + (nm ? "As setas movem as " + nm + " linha(s) marcada(s)." : E.sel >= 0 ? "As setas movem a Linha " + (E.sel + 1) + " (a que está aberta)." : "As setas movem todas as linhas juntas.")); dica.style.fontSize = "12px"; dica.style.marginTop = "6px";
+    const nm = (E.marc || []).length; const dica = el("div", "rt", (E.msgMov ? E.msgMov + ". " : "") + (nm ? "As setas movem as " + nm + " linha(s) marcada(s)." : E.sel >= 0 ? "As setas movem a Linha " + (E.sel + 1) + " (a que está aberta)." : "As setas movem todas as linhas juntas.")); dica.style.fontSize = "14px"; dica.style.marginTop = "6px";
     prev.appendChild(dica);
 
     caixa.appendChild(prev);
@@ -3199,7 +3199,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     // linhas: clique numa para abrir as opções dela
     const cl = el("div", "ed-card");
     const titL = el("div", "ed-tit", "Linhas do texto"); cl.appendChild(titL);
-    const exp = el("div", "rt", "Clique na linha para marcá-la (as setas da prévia movem as marcadas). A seta ▾ abre as opções. Arraste o ≡ para mudar a profundidade: a de cima fica na frente das outras."); exp.style.fontSize = "12px"; cl.appendChild(exp);
+    const exp = el("div", "rt", "Clique na linha para marcá-la (as setas da prévia movem as marcadas). A seta ▾ abre as opções. Arraste o ≡ para mudar a profundidade: a de cima fica na frente das outras."); exp.style.fontSize = "14px"; cl.appendChild(exp);
     const limpar = (ev) => { if ((E.marc || []).length && (ev.target === cl || ev.target === titL || ev.target === exp || ev.target === caixa)) { E.marc = []; desenhar(); agendarPrevia(); } };
     cl.addEventListener("click", limpar); caixa.addEventListener("click", limpar);
     const itens = [];
@@ -3265,7 +3265,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     }
     caixa.appendChild(an);
     const cNome = el("div", "ed-card");
-    cNome.appendChild(el("div", "rt", "Nome do estilo")); cNome.lastChild.style.fontSize = "12px";
+    cNome.appendChild(el("div", "rt", "Nome do estilo")); cNome.lastChild.style.fontSize = "14px";
     const nome = document.createElement("input"); nome.type = "text"; nome.className = "edNomeCampo"; nome.value = E.nome; nome.placeholder = "Ex.: Meu estilo 1";
     nome.addEventListener("input", () => { E.nome = nome.value; for (const o of Array.from(document.querySelectorAll(".edNomeCampo"))) if (o !== nome) o.value = nome.value; });
     cNome.appendChild(nome);
@@ -3448,7 +3448,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const lin2 = el("div"); lin2.style.display = "flex"; lin2.style.alignItems = "center";
     const bImg = miniBtn(C.imagem ? "Trocar imagem" : "Escolher imagem", escolherImagemC);
     bImg.style.marginRight = "8px"; lin2.appendChild(bImg);
-    const nomeI = el("div", "rt", C.imagem ? C.nomeImg : "Sem imagem (usa cor lisa)"); nomeI.style.fontSize = "12px"; nomeI.style.flex = "1"; lin2.appendChild(nomeI);
+    const nomeI = el("div", "rt", C.imagem ? C.nomeImg : "Sem imagem (usa cor lisa)"); nomeI.style.fontSize = "14px"; nomeI.style.flex = "1"; lin2.appendChild(nomeI);
     if (C.imagem) lin2.appendChild(miniBtn("✕", () => { C.imagem = ""; C.nomeImg = ""; desenharC(); agendarPreviaC(); }));
     t2.appendChild(lin2);
     t2.appendChild(linha("Escurecer a imagem", stepper(C.fundo, "escurecer", 0, 90, 5, "%")));
@@ -3482,7 +3482,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const t3 = secao("textos", "3. Textos");
     C.textos.forEach((t, i) => {
       const cab = el("div"); cab.style.display = "flex"; cab.style.alignItems = "center"; cab.style.marginTop = "6px";
-      const nome = el("div", "rt", t.titulo); nome.style.flex = "1"; nome.style.fontSize = "12px"; cab.appendChild(nome);
+      const nome = el("div", "rt", t.titulo); nome.style.flex = "1"; nome.style.fontSize = "14px"; cab.appendChild(nome);
       const ab = el("div", "", "Estilo ▾"); ab.style.fontSize = "12px"; ab.style.cursor = "pointer"; ab.style.padding = "2px 6px"; ab.style.color = C.abertoT === i ? "#b9acff" : "#8a8a9c";
       ab.addEventListener("click", () => { C.abertoT = C.abertoT === i ? -1 : i; desenharC(); agendarPreviaC(); });
       cab.appendChild(ab); t3.appendChild(cab);
@@ -3491,11 +3491,11 @@ $("btnTesteModelo").addEventListener("click", async () => {
       ta.style.width = "100%"; ta.style.boxSizing = "border-box"; ta.style.backgroundColor = "#0f0f16"; ta.style.color = "#e6e6ee"; ta.style.border = "1px solid #3a3a4c"; ta.style.borderRadius = "8px"; ta.style.padding = "6px";
       ta.addEventListener("input", () => { t.texto = ta.value; agendarPreviaC(); });
       t3.appendChild(ta);
-      if (i === 0) { const d0 = el("div", "rt", "Para a referência trocar, separe os trechos do texto com uma linha em branco: o 1º trecho usa a 1ª referência, o 2º usa a 2ª, e assim por diante."); d0.style.fontSize = "11px"; d0.style.color = "#8a8a9c"; t3.appendChild(d0); }
+      if (i === 0) { const d0 = el("div", "rt", "Para a referência trocar, separe os trechos do texto com uma linha em branco: o 1º trecho usa a 1ª referência, o 2º usa a 2ª, e assim por diante."); d0.style.fontSize = "13px"; d0.style.color = "#8a8a9c"; t3.appendChild(d0); }
       if (i === 0) {
         t3.appendChild(linha("Entrar por partes, acompanhando a fala", bolinha(C.pag.ativo, (on) => { C.pag.ativo = on; desenharC(); agendarPreviaC(); })));
         if (C.pag.ativo) t3.appendChild(linha("Quantas linhas por vez", stepper(C.pag, "linhas", 1, 8, 1, "")));
-        const ta2 = el("div", "rt", "Espaço do texto (retângulo verde na prévia, com as guias ligadas)"); ta2.style.fontSize = "12px"; ta2.style.marginTop = "6px"; t3.appendChild(ta2);
+        const ta2 = el("div", "rt", "Espaço do texto (retângulo verde na prévia, com as guias ligadas)"); ta2.style.fontSize = "14px"; ta2.style.marginTop = "6px"; t3.appendChild(ta2);
         t3.appendChild(linha("Largura do espaço", stepper(C.area, "larg", 30, 90, 5, "%")));
         t3.appendChild(linha("Altura do espaço", stepper(C.area, "alt", 10, 90, 5, "%")));
         t3.appendChild(linha("Posição horizontal", stepper(C.area, "x", 10, 90, 1, "%")));
