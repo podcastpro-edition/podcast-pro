@@ -3074,14 +3074,24 @@ $("btnTesteModelo").addEventListener("click", async () => {
     return c;
   }
 
-  let LARG_PREV = 0;
+  let PALCO_W = 0;
+  function ajustarPalco(idMold, idImg, idOv) { // palco 16:9 fixo; o vertical fica centralizado dentro dele
+    const m = $(idMold), im = $(idImg); if (!m || !im) return;
+    const W = m.offsetWidth; if (!W) return;
+    PALCO_W = W;
+    const H = Math.round(W * 9 / 16), vert = im.getAttribute("data-vert") === "1";
+    m.style.height = H + "px";
+    const iw = vert ? Math.round(H * 9 / 16) : W, esq = vert ? Math.round((W - iw) / 2) : 0;
+    im.style.width = iw + "px"; im.style.height = H + "px"; im.style.marginLeft = esq + "px";
+    const ov = idOv ? $(idOv) : null;
+    if (ov) { ov.style.left = esq + "px"; ov.style.top = "0px"; ov.style.width = iw + "px"; ov.style.height = H + "px"; }
+  }
   let MODO_CRIATIVO = false;
   function desenhar() { // redesenha sem o painel "pular": guarda a rolagem e reserva o espaço da prévia
     if (MODO_CRIATIVO) { desenharC(); return; }
     const y0 = Math.max(window.scrollY || 0, document.documentElement.scrollTop || 0, document.body.scrollTop || 0);
-    const ant = $("edPrevia");
-    if (ant && ant.offsetWidth) LARG_PREV = ant.offsetWidth / (ant.getAttribute("data-vert") === "1" ? 0.4 : 1);
     desenharInterno();
+    ajustarPalco("edMoldura", "edPrevia", "edOverlay");
     montarMolduras();
     const volta = () => { try { window.scrollTo(0, y0); } catch (e) { /* segue */ } try { document.documentElement.scrollTop = y0; document.body.scrollTop = y0; } catch (e) { /* segue */ } };
     volta(); setTimeout(volta, 60); setTimeout(volta, 350);
@@ -3091,23 +3101,38 @@ $("btnTesteModelo").addEventListener("click", async () => {
     if (E.sel < -1) E.sel = -1;
     caixa.innerHTML = "";
     const topo = el("div", "ed-card");
-    topo.appendChild(el("div", "ed-tit", "Começar de um estilo existente"));
-    const bases = [["", "Em branco"]].concat(estilos.map((e) => [e.nome, e.nome + (e.usuario ? " (meu)" : "")]));
-    topo.appendChild(selecionar(bases, E.base || "", (v) => {
-      if (!v) { E = { nome: E.nome, base: "", editando: null, sel: 0, linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } }; }
-      else { const e = estilos.find((x) => x.nome === v); const d = ordenarPorProfundidade(doDef(e.def), e.def); E = { nome: e.usuario ? e.nome : "", base: v, editando: e.usuario ? e.nome : null, sel: 0, linhas: d.linhas, anim: d.anim }; }
-      desenhar(); agendarPrevia();
-    }));
-    const salvarTopo = el("div", "ed-btn verde", "💾 Salvar estilo"); salvarTopo.style.marginTop = "8px";
-    salvarTopo.addEventListener("click", () => {
-      if (!(E.nome || "").trim()) { // falta o nome: leva até o campo
-        mensagem("Escreva o nome do estilo no campo \"Nome do estilo\" (logo antes do botão Salvar, lá embaixo) e salve de novo.", true);
-        const campo = $("edNome"); if (campo) { try { campo.scrollIntoView(); campo.focus(); } catch (e) { /* segue */ } }
-        return;
-      }
-      salvarEstilo();
-    });
-    topo.appendChild(salvarTopo);
+    topo.appendChild(el("div", "ed-tit", "Criar um estilo"));
+    const blocoSalvar = () => { // nome + botão salvar (nome sempre junto do Salvar)
+      const w = el("div"); w.style.marginTop = "8px";
+      const r = el("div", "rt", "Nome do estilo"); r.style.fontSize = "12px"; w.appendChild(r);
+      const campo = document.createElement("input"); campo.type = "text"; campo.className = "edNomeCampo"; campo.value = E.nome || ""; campo.placeholder = "Ex.: Meu estilo 1";
+      campo.addEventListener("input", () => { E.nome = campo.value; for (const o of Array.from(document.querySelectorAll(".edNomeCampo"))) if (o !== campo) o.value = campo.value; });
+      w.appendChild(campo);
+      const bt = el("div", "ed-btn verde", "💾 Salvar estilo"); bt.style.marginTop = "8px";
+      bt.addEventListener("click", salvarEstilo);
+      w.appendChild(bt);
+      return w;
+    };
+    const fila = el("div"); fila.style.display = "flex";
+    for (const [m, n] of [["novo", "Novo"], ["existente", "Usar um existente"]]) {
+      const b = el("div", "ed-btn", n); b.style.width = "auto"; b.style.paddingLeft = "14px"; b.style.paddingRight = "14px"; b.style.marginRight = "6px";
+      if (E.modo === m) b.style.backgroundColor = "#4a3fa0";
+      b.addEventListener("click", () => {
+        if (m === "novo") {
+          if (E.modo === "novo") E.modo = null;
+          else E = { nome: E.nome, base: "", editando: null, modo: "novo", sel: 0, marc: [], linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } };
+        } else E.modo = E.modo === "existente" ? null : "existente";
+        desenhar(); agendarPrevia();
+      });
+      fila.appendChild(b);
+    }
+    topo.appendChild(fila);
+    if (E.modo === "existente") {
+      const bases = [["", "Escolha um estilo..."]].concat(estilos.map((e) => [e.nome, e.nome + (e.usuario ? " (meu)" : "")]));
+      const sb = selecionar(bases, E.base || "", (v) => { if (v) carregarBase(v); });
+      sb.style.marginTop = "8px"; topo.appendChild(sb);
+      topo.appendChild(blocoSalvar());
+    } else if (E.modo === "novo") topo.appendChild(blocoSalvar());
     caixa.appendChild(topo);
     const prev = el("div", "ed-card");
     prev.appendChild(el("div", "ed-tit", "Prévia (como a legenda fica parada)"));
@@ -3124,15 +3149,14 @@ $("btnTesteModelo").addEventListener("click", async () => {
     bg.addEventListener("click", () => { E.guias = !E.guias; desenhar(); agendarPrevia(); });
     fm.appendChild(bg);
     prev.appendChild(fm);
-    const moldura = el("div"); moldura.style.position = "relative";
+    const moldura = el("div"); moldura.id = "edMoldura"; moldura.style.position = "relative";
     const vert = E.formato === "v";
-    if (vert) { moldura.style.width = "40%"; moldura.style.marginLeft = "auto"; moldura.style.marginRight = "auto"; }
+    if (PALCO_W) moldura.style.height = Math.round(PALCO_W * 9 / 16) + "px"; // altura fixa: trocar horizontal/vertical não mexe na página
     const im = document.createElement("img"); im.id = "edPrevia"; im.className = "ed-prev"; im.setAttribute("data-vert", vert ? "1" : "0");
     im.style.display = "block";
-    if (LARG_PREV) im.style.minHeight = Math.round(LARG_PREV * (vert ? 0.4 * 16 / 9 : 9 / 16)) + "px"; // reserva o espaço enquanto a imagem carrega
     if (ULTIMA_PREVIA) im.src = ULTIMA_PREVIA; // mantém a imagem anterior até a nova ficar pronta (sem piscar)
     moldura.appendChild(im);
-    const ovl = el("div"); ovl.id = "edOverlay"; ovl.style.position = "absolute"; ovl.style.left = "0px"; ovl.style.top = "0px"; ovl.style.right = "0px"; ovl.style.bottom = "0px";
+    const ovl = el("div"); ovl.id = "edOverlay"; ovl.style.position = "absolute"; ovl.style.left = "0px"; ovl.style.top = "0px";
     ovl.addEventListener("mousedown", aoApertarPrevia);
     moldura.appendChild(ovl);
     // setas dentro da prévia: movem a linha selecionada (ou todas, se nenhuma estiver aberta)
@@ -3242,8 +3266,8 @@ $("btnTesteModelo").addEventListener("click", async () => {
     caixa.appendChild(an);
     const cNome = el("div", "ed-card");
     cNome.appendChild(el("div", "rt", "Nome do estilo")); cNome.lastChild.style.fontSize = "12px";
-    const nome = document.createElement("input"); nome.type = "text"; nome.id = "edNome"; nome.value = E.nome; nome.placeholder = "Ex.: Meu estilo 1";
-    nome.addEventListener("input", () => { E.nome = nome.value; });
+    const nome = document.createElement("input"); nome.type = "text"; nome.className = "edNomeCampo"; nome.value = E.nome; nome.placeholder = "Ex.: Meu estilo 1";
+    nome.addEventListener("input", () => { E.nome = nome.value; for (const o of Array.from(document.querySelectorAll(".edNomeCampo"))) if (o !== nome) o.value = nome.value; });
     cNome.appendChild(nome);
     const salvar = el("div", "ed-btn verde", "💾 Salvar estilo"); salvar.style.marginTop = "8px";
     salvar.addEventListener("click", salvarEstilo);
@@ -3282,7 +3306,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       await chamar("/estilo/excluir", { nome });
       await recarregarEstilos();
       if (sel && sel.value === nome) sel.value = "aleatorio";
-      E = { nome: "", base: "", editando: null, linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } };
+      E = { nome: "", base: "", editando: null, modo: "novo", linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } };
       desenhar(); agendarPrevia();
       mensagem("Estilo \"" + nome + "\" excluído.");
     } catch (e) { mensagem("Não excluí: " + (e && e.message ? e.message : e), true); }
@@ -3306,7 +3330,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const e = estilos.find((x) => x.nome === nome);
     if (!e) return false;
     const d = ordenarPorProfundidade(doDef(e.def), e.def);
-    E = { nome: e.usuario ? e.nome : "", base: e.nome, editando: e.usuario ? e.nome : null, sel: 0, marc: [], linhas: d.linhas, anim: d.anim };
+    E = { nome: e.usuario ? e.nome : "", base: e.nome, editando: e.usuario ? e.nome : null, modo: "existente", sel: 0, marc: [], linhas: d.linhas, anim: d.anim };
     desenhar(); agendarPrevia();
     return true;
   }
@@ -3320,7 +3344,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     try {
       if (!estilos.length) await recarregarEstilos();
       if (!fontes.length) { try { fontes = (await (await fetch(SERVICO + "/estilos/fontes")).json()).fontes || []; } catch (e) { fontes = []; } }
-      if (!E) E = { nome: "", base: "", editando: null, linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } };
+      if (!E) E = { nome: "", base: "", editando: null, modo: "novo", linhas: [linhaPadrao(0), linhaPadrao(1)], anim: { entrada: "pop", duracao: 0.28, atraso: 0.07, saida: "fade" } };
       // se um estilo está escolhido na galeria, já abre com as opções dele para editar
       let carregou = false;
       if (sel && sel.value && sel.value !== E.base && sel.value !== E.editando) carregou = carregarBase(sel.value);
@@ -3333,7 +3357,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
   const ENTR_IMG = [["fade", "Surgir suave"], ["zoom", "Zoom (de perto para o normal)"], ["subir", "Entra de baixo"], ["descer", "Entra de cima"],
                     ["esquerda", "Entra da esquerda"], ["direita", "Entra da direita"], ["revelar", "Revelar (varredura)"], ["nenhuma", "Sem animação"]];
   const novoTexto = (titulo, tam, y, cor, larg) => ({ titulo, texto: "", larg, linha: Object.assign(linhaPadrao(0), { tam, y, cor }) });
-  let C = null, timerC = null, ULTIMA_C = "", LARG_C = 0;
+  let C = null, timerC = null, ULTIMA_C = "", PALCO_C = 0;
   const padraoC = () => ({
     imagem: "", nomeImg: "",
     fundo: { escurecer: 40, desfoque: 0, zoomLento: true, entrada: "fade", duracao: 0.6, saida: true },
@@ -3383,9 +3407,9 @@ $("btnTesteModelo").addEventListener("click", async () => {
 
   function desenharC() {
     const y0 = Math.max(window.scrollY || 0, document.documentElement.scrollTop || 0, document.body.scrollTop || 0);
-    const ant = $("crPrevia");
-    if (ant && ant.offsetWidth) LARG_C = ant.offsetWidth / (ant.getAttribute("data-vert") === "1" ? 0.4 : 1);
     desenharCInterno();
+    ajustarPalco("crMoldura", "crPrevia", null);
+    if ($("crMoldura")) PALCO_C = PALCO_W;
     const volta = () => { try { window.scrollTo(0, y0); } catch (e) { /* segue */ } try { document.documentElement.scrollTop = y0; document.body.scrollTop = y0; } catch (e) { /* segue */ } };
     volta(); setTimeout(volta, 60); setTimeout(volta, 350);
   }
@@ -3448,10 +3472,9 @@ $("btnTesteModelo").addEventListener("click", async () => {
     bg.addEventListener("click", () => { C.guias = !C.guias; desenharC(); agendarPreviaC(); });
     fm.appendChild(bg); tp.appendChild(fm);
     const vert = C.formato === "v";
-    const mold = el("div");
-    if (vert) { mold.style.width = "40%"; mold.style.marginLeft = "auto"; mold.style.marginRight = "auto"; }
+    const mold = el("div"); mold.id = "crMoldura"; mold.style.position = "relative";
+    if (PALCO_C) mold.style.height = Math.round(PALCO_C * 9 / 16) + "px";
     const im = document.createElement("img"); im.id = "crPrevia"; im.className = "ed-prev"; im.setAttribute("data-vert", vert ? "1" : "0"); im.style.display = "block";
-    if (LARG_C) im.style.minHeight = Math.round(LARG_C * (vert ? 0.4 * 16 / 9 : 9 / 16)) + "px";
     if (ULTIMA_C) im.src = ULTIMA_C;
     mold.appendChild(im); tp.appendChild(mold);
 

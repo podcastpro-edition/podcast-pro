@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.82"
+VERSAO = "1.0.83"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -2307,10 +2307,21 @@ def renderizar_previa(defn, texto, saida_png, W=1280, H=720, recorte=(640, 300),
             for qx, qy in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):
                 dg.rectangle((qx - 5, qy - 5, qx + 5, qy + 5), fill=(255, 255, 255, 255), outline=(255, 214, 10, 255), width=2)
         fundo.alpha_composite(g)
-    if recorte:
+    if recorte:  # miniatura: enquadra onde o texto realmente está (não só no meio do quadro)
         cw, ch = recorte
-        x0, y0 = (W - cw) // 2, int(H * 0.5 - ch / 2)
-        fundo = fundo.crop((x0, y0, x0 + cw, y0 + ch))
+        if caixas:
+            bx0, by0 = min(c["x0"] for c in caixas) * W, min(c["y0"] for c in caixas) * H
+            bx1, by1 = max(c["x1"] for c in caixas) * W, max(c["y1"] for c in caixas) * H
+            rh = max(float(ch), (by1 - by0) * 1.25, (bx1 - bx0) * 1.15 * ch / cw)
+            rh = min(rh, float(H), W * ch / cw)
+            rw = rh * cw / ch
+            mx, my = (bx0 + bx1) / 2.0, (by0 + by1) / 2.0
+            x0 = max(0.0, min(W - rw, mx - rw / 2))
+            y0 = max(0.0, min(H - rh, my - rh / 2))
+            fundo = fundo.crop((int(x0), int(y0), int(x0 + rw), int(y0 + rh))).resize((cw, ch), Image.LANCZOS)
+        else:
+            x0, y0 = (W - cw) // 2, int(H * 0.5 - ch / 2)
+            fundo = fundo.crop((x0, y0, x0 + cw, y0 + ch))
     os.makedirs(os.path.dirname(saida_png), exist_ok=True)
     fundo.convert("RGB").save(saida_png)
     return caixas
@@ -2910,6 +2921,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._responder({"erro": "imagem não encontrada"}, 404)
         elif self.path == "/estilos":
             usuario = estilos_usuario()
+            try:  # miniaturas antigas podiam sair em branco: refaz uma vez a cada versão
+                marca = os.path.join(_RAIZ, "painel", "img", "miniaturas_v.txt")
+                if not (os.path.isfile(marca) and open(marca, encoding="utf-8").read().strip() == VERSAO):
+                    for n_, d_ in usuario.items():
+                        renderizar_previa(d_, "Seu texto aparece aqui", os.path.join(_RAIZ, "painel", "img", re.sub(r"\s+", "_", n_) + ".png"))
+                    os.makedirs(os.path.dirname(marca), exist_ok=True)
+                    open(marca, "w", encoding="utf-8").write(VERSAO)
+            except Exception:
+                pass
             todos = [{"nome": n, "def": _limpar_def({"linhas": l}), "usuario": False} for n, l in ESTILOS_OVERLAY.items()]
             todos += [{"nome": n, "def": d, "usuario": True} for n, d in usuario.items()]
             self._responder({"estilos": todos})
