@@ -2235,6 +2235,44 @@ async function arquivoParaSequencia(ppro, seq, wav) { // converte "tempo do arqu
   return (f) => f; // não achei o áudio na sequência: assume que o tempo é o mesmo
 }
 
+// Descobre sozinha, olhando a sequência ativa, qual é o áudio da fala (sem depender de "participantes")
+async function audioDaSequencia(ppro, seq) {
+  const sec = async (f) => { const t = await f(); return t && t.seconds !== undefined ? t.seconds : Number(t); };
+  const norm = (c) => String(c || "").replace(/\//g, "\\").toLowerCase();
+  const camerasVideo = new Set();
+  const nV = await seq.getVideoTrackCount();
+  for (let i = 0; i < nV; i++) {
+    const its = await (await seq.getVideoTrack(i)).getTrackItems(1, false);
+    for (const it of its.slice(0, 3)) { try { const cp = await ppro.ClipProjectItem.cast(await it.getProjectItem()); camerasVideo.add(norm(await cp.getMediaFilePath())); } catch (e) { /* segue */ } }
+  }
+  const nA = await seq.getAudioTrackCount();
+  const porArquivo = {}; // caminho -> { dur, trilhas: Set }
+  for (let ai = 0; ai < nA; ai++) {
+    const tr = await seq.getAudioTrack(ai);
+    let muda = false; try { if (typeof tr.isMuted === "function") muda = !!(await tr.isMuted()); } catch (e) { muda = false; }
+    const its = await tr.getTrackItems(1, false);
+    for (const it of its) {
+      let des = false; try { des = !!(await it.isDisabled()); } catch (e) { des = false; }
+      let caminho = null;
+      try { const cp = await ppro.ClipProjectItem.cast(await it.getProjectItem()); caminho = await cp.getMediaFilePath(); } catch (e) { continue; }
+      if (!caminho || camerasVideo.has(norm(caminho))) continue;
+      const f = porArquivo[caminho] || (porArquivo[caminho] = { dur: 0, ativas: new Set(), todas: new Set() });
+      f.todas.add(ai);
+      if (!muda && !des) { f.dur += (await sec(() => it.getEndTime())) - (await sec(() => it.getStartTime())); f.ativas.add(ai); }
+    }
+  }
+  const lista = Object.entries(porArquivo).filter(([, f]) => f.dur > 0).sort((a, b) => {
+    const wa = /\.wav$/i.test(a[0]) ? 1 : 0, wb = /\.wav$/i.test(b[0]) ? 1 : 0;
+    return wb - wa || b[1].dur - a[1].dur;
+  });
+  if (!lista.length) throw new Error("não achei, nesta sequência, o áudio da fala (nenhuma trilha de áudio ligada fora das câmeras)");
+  const [wav, f] = lista[0];
+  const todas = Array.from(f.todas).sort((a, b) => a - b);
+  const base = todas[0];
+  const pessoas = (Array.from(f.ativas).sort((a, b) => a - b)).map((ai, k) => ({ nome: "Voz " + (k + 1), canal: Math.max(0, ai - base), camera: "V1" }));
+  return { wav, pessoas };
+}
+
 let VIRAIS = [];
 let VIRAL_DUR = "30-60";
 (function () {
@@ -2249,15 +2287,13 @@ let VIRAL_DUR = "30-60";
 const faixaViral = (nota) => nota >= 91 ? { cor: "#d93a3a", emoji: "🔴", nome: "vermelho", marc: 1 } : nota >= 61 ? { cor: "#e8842a", emoji: "🟠", nome: "laranja", marc: 3 } : { cor: "#7a4fd0", emoji: "🟣", nome: "roxo", marc: 2 };
 
 // transcreve sozinho se ainda não existir (reaproveita o que já foi feito)
-async function transcreverAuto(ppro, projeto, sequencia, wav) {
-  AUTO = null;
-  await garantirAudio(ppro, sequencia);
+async function transcreverAuto(ppro, projeto, sequencia, wav, pessoas) {
   const inicio = Date.now();
   const texto = "Ainda não existia a transcrição: estou fazendo agora (só na primeira vez).\nNa primeira vez leva uns 25 minutos neste computador; depois fica guardado.\nNão feche o Premiere.";
   const id = setInterval(() => { const s = Math.round((Date.now() - inicio) / 1000); mostrar(texto + "\nTempo decorrido: " + Math.floor(s / 60) + " min " + (s % 60) + " s"); }, 1000);
   try {
     await chamar("/legendas_podcast", {
-      path: wav, pessoas: PODCAST.pessoas.map((p) => ({ nome: p.nome, canal: p.canal, camera: p.camera })),
+      path: wav, pessoas,
       model: $("modelo").value, device: $("dispositivo").value, language: "pt", reuse: true,
     });
   } finally { clearInterval(id); }
@@ -2325,11 +2361,9 @@ $("btnViral").addEventListener("click", () => semPressa(async () => {
     const projeto = await ppro.Project.getActiveProject();
     const origem = await projeto.getActiveSequence();
     if (!origem) return mostrar("Nenhuma sequência ativa (deixe a PODCAST ativa).", true);
-    etapa = "escolher o áudio dos microfones (usa o que já foi escolhido antes)";
-    AUTO = null;
-    await garantirAudio(ppro, origem);
-    etapa = "ler o áudio da sequência";
-    const wav = await wavDoPodcast(ppro, origem);
+    etapa = "achar o áudio da fala na sequência ativa";
+    mostrar("Olhando a sequência para achar o áudio da fala...");
+    const { wav, pessoas: pessoasAudio } = await audioDaSequencia(ppro, origem);
     etapa = "procurar os melhores momentos";
     const [dmin, dmax] = String(VIRAL_DUR).split("-").map(Number);
     const pedir = () => comRelogio("Procurando os trechos com mais chance de prender...", () => chamar("/virais", { path: wav, min: dmin, max: dmax, quantidade: 10 }));
@@ -2337,7 +2371,7 @@ $("btnViral").addEventListener("click", () => semPressa(async () => {
     try { r = await pedir(); } catch (e) {
       if (!/Falta a transcri/.test(e && e.message ? e.message : "")) throw e;
       etapa = "transcrever o podcast";
-      await transcreverAuto(ppro, projeto, origem, wav);
+      await transcreverAuto(ppro, projeto, origem, wav, pessoasAudio);
       etapa = "procurar os melhores momentos";
       r = await pedir();
     }

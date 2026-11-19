@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.103",
-  "notas": "Erro de trilhas faltando mostra o nome da sequencia ativa",
+  "versao": "1.0.104",
+  "notas": "Virais acha sozinho o audio da fala na sequencia ativa (sem participantes)",
   "arquivos": {
-    "server.py": "bc451fcd93276500ccd185ed50f7a204037bfe5e13f8606d59dd7881b29a26e8",
+    "server.py": "8c601b83f40a05db2aebe8c5f8502fb1a886c1016c337c6983a93bab6ad0dc91",
     "painel_index.html": "e27141dec7284f2bf2a2038cd63e17e9b3f955384d1a6ef966049edbe730ecd2",
-    "painel_main.js": "290b8606c1a8893f5150e6c1a0d5ee10c75d58a76200e3a082e4b33d11a6d397",
+    "painel_main.js": "9d2af9b1d931d59d190411f44f20eb60c0e230d719b4ea23d49ce52f365f78b0",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",
