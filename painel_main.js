@@ -2377,6 +2377,101 @@ $("btnViral").addEventListener("click", () => semPressa(async () => {
   }
 }));
 
+// --- Corrigir buracos: trechos da sequência em que nenhuma câmera está ligada (aparece preto) ---
+$("btnBuracos").addEventListener("click", () => semPressa(async () => {
+  let etapa = "começando";
+  const avisos = [];
+  try {
+    const ppro = require("premierepro");
+    const projeto = await ppro.Project.getActiveProject();
+    const seq = await projeto.getActiveSequence();
+    if (!seq) return mostrar("Nenhuma sequência ativa (deixe a PODCAST ativa).", true);
+    const sec = async (f) => { const t = await f(); return t && t.seconds !== undefined ? t.seconds : Number(t); };
+    const cams = camerasUsadas();
+    const nV = await seq.getVideoTrackCount();
+    etapa = "ler as câmeras da sequência";
+    mostrar("Procurando buracos nas câmeras...");
+    const trilhas = {}, caminhos = {};
+    for (const cam of cams) {
+      const idx = parseInt(cam.slice(1), 10) - 1;
+      if (idx + 1 > nV) throw new Error("a sequência não tem a trilha " + cam);
+      const its = await (await seq.getVideoTrack(idx)).getTrackItems(1, false);
+      const lista = [];
+      for (const it of its) {
+        let des = false; try { des = !!(await it.isDisabled()); } catch (e) { des = false; }
+        lista.push({ ini: await sec(() => it.getStartTime()), fim: await sec(() => it.getEndTime()), entrada: await sec(() => it.getInPoint()), des });
+        if (!caminhos[cam]) { try { const cp = await ppro.ClipProjectItem.cast(await it.getProjectItem()); caminhos[cam] = await cp.getMediaFilePath(); } catch (e) { /* segue */ } }
+      }
+      lista.sort((a, b) => a.ini - b.ini);
+      if (!lista.length || !caminhos[cam]) throw new Error("a trilha " + cam + " está vazia");
+      trilhas[cam] = lista;
+    }
+    // união de tudo que está LIGADO
+    const ligados = [];
+    for (const cam of cams) for (const c of trilhas[cam]) if (!c.des) ligados.push({ ini: c.ini, fim: c.fim, cam });
+    ligados.sort((a, b) => a.ini - b.ini);
+    const buracos = [];
+    let fimCob = 0, camAnt = null;
+    for (const c of ligados) {
+      if (c.ini - fimCob > 0.02) buracos.push({ g0: fimCob, g1: c.ini, ativo: camAnt || c.cam });
+      if (c.fim >= fimCob) { fimCob = c.fim; camAnt = c.cam; }
+    }
+    if (!buracos.length) return mostrar("Não achei buracos: sempre tem uma câmera ligada do começo ao fim.");
+    const total = buracos.reduce((s, b) => s + (b.g1 - b.g0), 0);
+    if (buracos.length > 150) throw new Error("achei " + buracos.length + " buracos; é coisa demais para corrigir sozinho. Refaça a montagem.");
+
+    etapa = "achar os arquivos no projeto";
+    const itens = {};
+    for (const cam of cams) {
+      const a = await acharClipe(ppro, projeto, caminhos[cam]);
+      if (!a) throw new Error("não achei a câmera " + cam + " no projeto");
+      itens[cam] = a;
+    }
+    const editor = await ppro.SequenceEditor.getEditor(seq);
+    let n = 0;
+    for (const b of buracos) {
+      n++;
+      for (let ci = 0; ci < cams.length; ci++) {
+        const cam = cams[ci];
+        mostrar("Tapando buraco " + n + " de " + buracos.length + " (" + cam + ")\nNão mexa no Premiere.");
+        const l = trilhas[cam];
+        let ref = null;
+        for (const c of l) if (c.fim <= b.g0 + 0.05) ref = c;
+        if (!ref) ref = l.find((c) => c.ini >= b.g1 - 0.05);
+        if (!ref) continue;
+        const fa = ref.entrada + (b.g0 - ref.ini), fb = ref.entrada + (b.g1 - ref.ini);
+        if (!(fa >= 0) || !(fb > fa)) { avisos.push(cam + ": não deu para tapar o buraco em " + b.g0.toFixed(1) + " s"); continue; }
+        etapa = "tapar o buraco " + n + " (" + cam + ")";
+        const tI = await ppro.TickTime.createWithSeconds(fa), tF = await ppro.TickTime.createWithSeconds(fb);
+        await executar(projeto, "Buracos: entrada e saída", () => itens[cam].clip.createSetInOutPointsAction(tI, tF));
+        const tp = await ppro.TickTime.createWithSeconds(b.g0);
+        await executar(projeto, "Buracos: colocar", () => editor.createOverwriteItemAction(itens[cam].item, tp, ci, ci));
+      }
+    }
+    for (const cam of cams) await executar(projeto, "Buracos: limpar", () => itens[cam].clip.createClearInOutPointsAction());
+
+    // só a câmera do trecho anterior fica ligada em cada buraco; as outras ficam desativadas
+    etapa = "desativar as câmeras que não são a escolhida";
+    for (let ci = 0; ci < cams.length; ci++) {
+      const cam = cams[ci];
+      const its = await (await seq.getVideoTrack(ci)).getTrackItems(1, false);
+      const alvos = [];
+      for (const it of its) {
+        const ini = await sec(() => it.getStartTime());
+        for (const b of buracos) if (b.ativo !== cam && Math.abs(ini - b.g0) < 0.06) { alvos.push(it); break; }
+      }
+      for (let k = 0; k < alvos.length; k += 25) {
+        const lote = alvos.slice(k, k + 25);
+        projeto.lockedAccess(() => { projeto.executeTransaction((c) => { for (const it of lote) c.addAction(it.createSetDisabledAction(true)); }, "Buracos: desativar"); });
+        await dormir(500);
+      }
+    }
+    mostrar("Pronto: tapei " + buracos.length + " buraco(s), " + total.toFixed(1) + " s no total, usando a câmera do trecho anterior.\nConfira passando pelos pontos: " + buracos.slice(0, 6).map((b) => fmt(b.g0)).join(", ") + (buracos.length > 6 ? "..." : "") + (avisos.length ? "\nAvisos:\n- " + avisos.join("\n- ") : ""));
+  } catch (e) {
+    mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
+  }
+}));
+
 // --- Abas do painel ---------------------------------------------------------
 (function () {
   const abas = ["Podcast", "Legendas", "Criativos", "Vertical", "Virais", "Silencios", "Buscar", "Avancado"];

@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.98",
-  "notas": "Virais: usa o audio dos microfones (nao o arquivo da camera) e reaproveita a transcricao ja feita",
+  "versao": "1.0.99",
+  "notas": "Podcast: botao Corrigir buracos (frames pretos) nas camera",
   "arquivos": {
-    "server.py": "7e70872752d03854a6b829d1b8318f83af3769d086e87a1bf56606398f7fdb32",
-    "painel_index.html": "b212d8ec9dcfca62579cc4317b2b2279767fc41b5dfc70ad5df34feda49a89ce",
-    "painel_main.js": "1cab340b6ab82e43d8fa960db75194201060c02a091b8cae0dc7444f15dc3930",
+    "server.py": "8357caaee64e3eacee3fa63ff966344286a82e224c90a24db4532c8f465588c2",
+    "painel_index.html": "e27141dec7284f2bf2a2038cd63e17e9b3f955384d1a6ef966049edbe730ecd2",
+    "painel_main.js": "6397fdf05552e3f167ac2ace9a32d9586a472f12e4e2a1c9319557555473c3c2",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",
