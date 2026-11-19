@@ -2229,6 +2229,88 @@ async function arquivoParaSequencia(ppro, seq, wav) { // converte "tempo do arqu
 }
 
 let VIRAIS = [];
+let VIRAL_DUR = "30-60";
+(function () {
+  const caixa = $("viralDur"); if (!caixa) return;
+  const bs = Array.from(caixa.children);
+  bs.forEach((b) => b.addEventListener("click", () => {
+    VIRAL_DUR = b.getAttribute("data-d");
+    bs.forEach((o) => { o.style.backgroundColor = o === b ? "#4a3fa0" : ""; });
+  }));
+})();
+
+const faixaViral = (nota) => nota >= 91 ? { cor: "#d93a3a", emoji: "🔴", nome: "vermelho", marc: 1 } : nota >= 61 ? { cor: "#e8842a", emoji: "🟠", nome: "laranja", marc: 3 } : { cor: "#7a4fd0", emoji: "🟣", nome: "roxo", marc: 2 };
+
+// transcreve sozinho se ainda não existir (reaproveita o que já foi feito)
+async function transcreverAuto(ppro, projeto, sequencia, wav) {
+  AUTO = null;
+  await garantirAudio(ppro, sequencia);
+  const inicio = Date.now();
+  const texto = "Ainda não existia a transcrição: estou fazendo agora (só na primeira vez).\nNa primeira vez leva uns 25 minutos neste computador; depois fica guardado.\nNão feche o Premiere.";
+  const id = setInterval(() => { const s = Math.round((Date.now() - inicio) / 1000); mostrar(texto + "\nTempo decorrido: " + Math.floor(s / 60) + " min " + (s % 60) + " s"); }, 1000);
+  try {
+    await chamar("/legendas_podcast", {
+      path: wav, pessoas: PODCAST.pessoas.map((p) => ({ nome: p.nome, canal: p.canal, camera: p.camera })),
+      model: $("modelo").value, device: $("dispositivo").value, language: "pt", reuse: true,
+    });
+  } finally { clearInterval(id); }
+}
+
+// põe marcadores coloridos na sequência (um por trecho) e tenta marcar In/Out; devolve o que funcionou
+async function marcarVirais(ppro, projeto, seq, lista) {
+  const resultado = { marcadores: false, cores: false };
+  try {
+    let M = ppro.Markers.getMarkers(seq); if (M && typeof M.then === "function") M = await M;
+    const tipo = (ppro.Constants && ppro.Constants.MarkerType && (ppro.Constants.MarkerType.COMMENT !== undefined ? ppro.Constants.MarkerType.COMMENT : ppro.Constants.MarkerType.Comment)) || "Comment";
+    // apaga marcadores antigos feitos por mim (nome começa com 🔥) para não acumular
+    try {
+      const antigos = (await M.getMarkers ? await M.getMarkers() : []) || [];
+      const rem = [];
+      for (const mk of antigos) { try { if (String(await mk.getName()).indexOf("🔥") === 0) rem.push(mk); } catch (e) { /* segue */ } }
+      if (rem.length && typeof M.createRemoveMarkerAction === "function") projeto.lockedAccess(() => { projeto.executeTransaction((c) => { for (const mk of rem) c.addAction(M.createRemoveMarkerAction(mk)); }, "Virais: limpar marcadores"); });
+    } catch (e) { /* sem leitura de marcadores antigos */ }
+    const tempos = [];
+    for (const v of lista) tempos.push([await ppro.TickTime.createWithSeconds(v.seqIni), await ppro.TickTime.createWithSeconds(Math.max(0.1, v.seqFim - v.seqIni))]);
+    projeto.lockedAccess(() => {
+      projeto.executeTransaction((c) => {
+        lista.forEach((v, i) => {
+          const f = faixaViral(v.nota);
+          c.addAction(M.createAddMarkerAction("🔥 " + f.emoji + " " + v.nota + "%", tipo, tempos[i][0], tempos[i][1], v.texto.slice(0, 120)));
+        });
+      }, "Virais: marcadores");
+    });
+    resultado.marcadores = true;
+    await dormir(500);
+    try { // tenta pintar cada marcador na cor da faixa
+      const todos = await M.getMarkers();
+      for (const mk of todos) {
+        try {
+          const nome = String(await mk.getName());
+          if (nome.indexOf("🔥") !== 0) continue;
+          const nota = parseInt(nome.replace(/\D+/g, " ").trim().split(" ").pop(), 10);
+          if (typeof mk.createSetColorByIndexAction === "function") { projeto.lockedAccess(() => { projeto.executeTransaction((c) => { c.addAction(mk.createSetColorByIndexAction(faixaViral(nota).marc)); }, "Virais: cor"); }); resultado.cores = true; }
+        } catch (e) { /* segue */ }
+      }
+    } catch (e) { /* cores indisponíveis: o emoji no nome já mostra a faixa */ }
+  } catch (e) { resultado.erro = e && e.message ? e.message : String(e); }
+  return resultado;
+}
+
+// vai até o trecho na sequência e marca In/Out
+async function irParaTrecho(ppro, projeto, seq, v) {
+  const a = await ppro.TickTime.createWithSeconds(v.seqIni), b = await ppro.TickTime.createWithSeconds(v.seqFim);
+  let marcou = false;
+  try {
+    if (typeof seq.createSetInPointAction === "function") {
+      await executar(projeto, "Virais: In", () => seq.createSetInPointAction(a));
+      await executar(projeto, "Virais: Out", () => seq.createSetOutPointAction(b));
+      marcou = true;
+    } else if (typeof seq.setInPoint === "function") { await seq.setInPoint(a); await seq.setOutPoint(b); marcou = true; }
+  } catch (e) { marcou = false; }
+  try { await seq.setPlayerPosition(a); } catch (e) { /* segue */ }
+  return marcou;
+}
+
 $("btnViral").addEventListener("click", () => semPressa(async () => {
   let etapa = "começando";
   try {
@@ -2239,36 +2321,58 @@ $("btnViral").addEventListener("click", () => semPressa(async () => {
     etapa = "ler o áudio da sequência";
     const wav = await wavDoPodcast(ppro, origem);
     etapa = "procurar os melhores momentos";
-    const [dmin, dmax] = String($("viralDur").value || "30-60").split("-").map(Number);
-    const r = await comRelogio("Procurando os trechos com mais chance de prender...", () => chamar("/virais", { path: wav, min: dmin, max: dmax, quantidade: 8 }));
+    const [dmin, dmax] = String(VIRAL_DUR).split("-").map(Number);
+    const pedir = () => comRelogio("Procurando os trechos com mais chance de prender...", () => chamar("/virais", { path: wav, min: dmin, max: dmax, quantidade: 10 }));
+    let r;
+    try { r = await pedir(); } catch (e) {
+      if (!/Falta a transcri/.test(e && e.message ? e.message : "")) throw e;
+      etapa = "transcrever o podcast";
+      await transcreverAuto(ppro, projeto, origem, wav);
+      etapa = "procurar os melhores momentos";
+      r = await pedir();
+    }
     VIRAIS = r.trechos || [];
     const caixa = $("viraisLista");
     while (caixa.firstChild) caixa.removeChild(caixa.firstChild);
     if (!VIRAIS.length) return mostrar("Não achei trechos nessa duração. Tente outra duração.", true);
+
+    etapa = "ajustar os tempos para a sua sequência";
+    const mapa = await arquivoParaSequencia(ppro, origem, wav);
+    VIRAIS.forEach((v) => { v.seqIni = mapa(v.ini); v.seqFim = mapa(v.fim); });
+    etapa = "marcar os trechos na sequência";
+    const mk = await marcarVirais(ppro, projeto, origem, VIRAIS);
+
+    const detalhe = document.createElement("div"); detalhe.className = "ed-card"; detalhe.style.display = "none";
+    const botoes = document.createElement("div");
     VIRAIS.forEach((v, i) => {
-      const c = document.createElement("div"); c.className = "ed-card";
-      const t = document.createElement("div"); t.className = "ed-tit"; t.textContent = (i + 1) + ") " + fmt(v.ini) + " a " + fmt(v.fim) + "  ·  nota " + v.nota;
-      const tx = document.createElement("div"); tx.className = "dica"; tx.textContent = "“" + v.texto + "”";
-      const mo = document.createElement("div"); mo.className = "dica"; mo.style.color = "#b9acff"; mo.textContent = v.motivos.join(" · ");
-      const b = document.createElement("div"); b.className = "mini"; b.textContent = "📱 Converter este trecho em vertical";
+      const f = faixaViral(v.nota);
+      const b = document.createElement("div"); b.className = "ed-btn";
+      b.style.backgroundColor = f.cor; b.style.textAlign = "left"; b.style.paddingLeft = "14px";
+      b.textContent = f.emoji + "  " + v.nota + "% de chance   ·   " + fmt(v.seqIni) + " a " + fmt(v.seqFim);
       b.addEventListener("click", () => semPressa(async () => {
         try {
           const proj = await ppro.Project.getActiveProject();
           const seq = await proj.getActiveSequence();
-          const mapa = await arquivoParaSequencia(ppro, seq, wav);
-          await fluxoVertical("janela", { ini: mapa(v.ini), fim: mapa(v.fim) });
-        } catch (e) { mostrar("Erro ao converter este trecho:\n" + (e && e.message ? e.message : e), true); }
+          const ok = await irParaTrecho(ppro, proj, seq, v);
+          while (detalhe.firstChild) detalhe.removeChild(detalhe.firstChild);
+          const t = document.createElement("div"); t.className = "ed-tit"; t.textContent = (i + 1) + ") " + v.nota + "% · " + f.nome;
+          const tx = document.createElement("div"); tx.className = "dica"; tx.textContent = "“" + v.texto + "”";
+          const mo = document.createElement("div"); mo.className = "dica"; mo.style.color = "#b9acff"; mo.textContent = v.motivos.join(" · ");
+          const cv = document.createElement("div"); cv.className = "mini"; cv.textContent = "📱 Converter este trecho em vertical";
+          cv.addEventListener("click", () => semPressa(() => fluxoVertical("janela", { ini: v.seqIni, fim: v.seqFim })));
+          detalhe.appendChild(t); detalhe.appendChild(tx); detalhe.appendChild(mo); detalhe.appendChild(cv);
+          detalhe.style.display = "block";
+          mostrar(ok ? "Fui até o trecho " + (i + 1) + " e marquei In/Out na sequência." : "Fui até o início do trecho " + (i + 1) + ", mas não consegui marcar In/Out sozinho (o marcador colorido está na timeline).");
+        } catch (e) { mostrar("Erro ao ir até o trecho:\n" + (e && e.message ? e.message : e), true); }
       }));
-      c.appendChild(t); c.appendChild(tx); c.appendChild(mo); c.appendChild(b);
-      caixa.appendChild(c);
+      botoes.appendChild(b);
     });
-    mostrar("Achei " + VIRAIS.length + " sugestões, da maior nota para a menor. Role a aba Vertical para vê-las e clique em Converter no trecho que gostar.");
+    caixa.appendChild(botoes); caixa.appendChild(detalhe);
+    mostrar("Achei " + VIRAIS.length + " sugestões (🔴 91–100%, 🟠 61–90%, 🟣 abaixo). Marcadores na sequência: " + (mk.marcadores ? (mk.cores ? "sim, coloridos" : "sim (a cor está no emoji do nome)") : "não consegui (" + (mk.erro || "sem motivo") + ")") + ".\nClique em um botão colorido da lista para ir até o trecho.");
   } catch (e) {
     mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
   }
 }));
-
-
 
 // --- Abas do painel ---------------------------------------------------------
 (function () {
