@@ -2318,6 +2318,9 @@ $("btnViral").addEventListener("click", () => semPressa(async () => {
     const projeto = await ppro.Project.getActiveProject();
     const origem = await projeto.getActiveSequence();
     if (!origem) return mostrar("Nenhuma sequência ativa (deixe a PODCAST ativa).", true);
+    etapa = "escolher o áudio dos microfones (usa o que já foi escolhido antes)";
+    AUTO = null;
+    await garantirAudio(ppro, origem);
     etapa = "ler o áudio da sequência";
     const wav = await wavDoPodcast(ppro, origem);
     etapa = "procurar os melhores momentos";
