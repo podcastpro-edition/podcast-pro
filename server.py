@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.93"
+VERSAO = "1.0.94"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -2965,6 +2965,100 @@ def buscar_trechos(wav, consulta, contexto):
     return {"passagens": saida, "frases": len(frases),
             "duracao": round(sum(p["fim"] - p["ini"] for p in saida), 1)}
 
+_GANCHOS = ["voce sabia", "imagina", "ninguem", "nunca", "segredo", "a verdade", "descobri", "percebi", "de repente",
+            "foi quando", "ate que", "nao acredito", "o problema", "o maior erro", "por que", "pare de", "cuidado",
+            "sabe o que", "eu achava", "eu pensava", "tudo mudou", "a partir daquele", "naquele dia", "eu nao aguentava"]
+_EMOCAO = ["amor", "deus", "perdao", "perdoa", "medo", "dor", "vergonha", "famili", "traic", "milagre", "liberta",
+           "cura", "curad", "chor", "sofr", "morte", "morr", "vicio", "droga", "depress", "ansied", "raiva", "odio",
+           "mae", "pai", "filho", "filha", "casamento", "marido", "esposa", "separa", "divorc", "esperanca", "fe",
+           "transform", "mudou", "mudanca", "coragem", "culpa", "sozinh", "abandon", "vitoria", "propósito", "proposito"]
+_INICIO_FRACO = ("e", "mas", "entao", "ai", "porque", "que", "ou", "pois", "tipo", "ne", "so")
+
+
+def trechos_virais(wav, dmin=20.0, dmax=60.0, quantidade=8):
+    """Procura, na transcrição por palavra, trechos com cara de corte curto que prende: começa com gancho,
+    pensamento completo, emoção, ritmo bom. Nota de 0 a 100 + motivos. Tempos = tempos do arquivo de áudio."""
+    cache = os.path.splitext(wav)[0] + "_palavras.json"
+    if not os.path.isfile(cache):
+        raise RuntimeError("Falta a transcrição do podcast. Na aba Legendas, clique em "
+                           "'Transcrever o podcast (por palavra)' (só precisa fazer uma vez).")
+    with open(cache, encoding="utf-8") as f:
+        palavras = json.load(f)
+    if len(palavras) < 30:
+        raise RuntimeError("A transcrição está muito curta para procurar trechos.")
+    frases, atual = [], []
+    for p in palavras:
+        if atual and p["s"] - atual[-1]["e"] > 0.9:
+            frases.append(atual)
+            atual = []
+        atual.append(p)
+        if p["w"][-1:] in ".?!" and len(atual) >= 3:
+            frases.append(atual)
+            atual = []
+    if atual:
+        frases.append(atual)
+    norm_f = [_norm(" ".join(x["w"] for x in fr)) for fr in frases]
+    cands = []
+    n = len(frases)
+    for i in range(n):
+        ini = frases[i][0]["s"]
+        for j in range(i, n):
+            fim = frases[j][-1]["e"]
+            dur = fim - ini
+            if dur > dmax:
+                break
+            if dur < dmin:
+                continue
+            ws = [w for fr in frases[i:j + 1] for w in fr]
+            txt_n = " ".join(norm_f[i:j + 1])
+            motivos, nota = [], 0.0
+            prim = norm_f[i]
+            if any(g in prim for g in _GANCHOS) or frases[i][-1]["w"].endswith("?"):
+                nota += 3.0; motivos.append("começa com gancho")
+            if len(frases[i]) <= 12:
+                nota += 1.0
+            toks = txt_n.split()
+            emo = sum(1 for t in toks if any(t.startswith(r) for r in _EMOCAO))
+            dens = emo / max(1, len(toks)) * 100
+            if emo:
+                nota += min(4.0, dens * 0.7); motivos.append("assunto forte/emocional")
+            qex = sum(1 for fr in frases[i:j + 1] if fr[-1]["w"][-1:] in "?!")
+            if qex:
+                nota += min(2.0, qex * 0.6); motivos.append("perguntas/ênfase")
+            taxa = len(ws) / max(1.0, dur)
+            if 2.2 <= taxa <= 3.6:
+                nota += 1.0; motivos.append("ritmo bom")
+            elif taxa < 1.6:
+                nota -= 1.5
+            pausas = sum(1 for a, b in zip(ws, ws[1:]) if b["s"] - a["e"] > 1.5)
+            nota -= min(3.0, pausas * 1.0)
+            if frases[j][-1]["w"][-1:] in ".!?":
+                nota += 1.0; motivos.append("termina fechando a ideia")
+            if toks and toks[0] in _INICIO_FRACO:
+                nota -= 1.5
+            centro = (dmin + dmax) / 2
+            nota += 1.0 - abs(dur - centro) / max(1.0, (dmax - dmin) / 2)
+            cands.append((nota, ini, fim, i, j, motivos))
+    cands.sort(key=lambda c: -c[0])
+    escolhidos = []
+    for c in cands:
+        if all(c[2] <= e[1] or c[1] >= e[2] for e in escolhidos):
+            escolhidos.append(c)
+        if len(escolhidos) >= int(quantidade):
+            break
+    saida = []
+    for nota, ini, fim, i, j, motivos in escolhidos:
+        txt = " ".join(w["w"] for fr in frases[i:j + 1] for w in fr)
+        vistos = []
+        for mt in motivos:
+            if mt not in vistos:
+                vistos.append(mt)
+        saida.append({"ini": round(ini, 2), "fim": round(fim, 2), "nota": int(max(1, min(99, round(nota / 12.0 * 100)))),
+                      "motivos": vistos, "texto": (txt[:200] + "...") if len(txt) > 200 else txt})
+    saida.sort(key=lambda x: -x["nota"])
+    return {"trechos": saida}
+
+
 # --------------------------------------------------------------------- HTTP
 
 class Handler(BaseHTTPRequestHandler):
@@ -3271,6 +3365,11 @@ class Handler(BaseHTTPRequestHandler):
                     os.path.normpath(pasta), bool(corpo.get("enxuto", False)),
                     corpo.get("semente", 1), corpo.get("cache"), corpo.get("prefixo", ""))})
 
+            if self.path == "/virais":
+                try:
+                    return self._responder(trechos_virais(caminho, float(corpo.get("min", 20)), float(corpo.get("max", 60)), int(corpo.get("quantidade", 8))))
+                except Exception as e:
+                    return self._responder({"erro": str(e)}, 400)
             if self.path == "/crops_vertical":
                 for nome_c, o in corpo["cameras"].items():
                     if not isinstance(o, str) or not os.path.isfile(o):

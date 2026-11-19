@@ -303,8 +303,16 @@
   <div id="Vertical" class="aba">
     <h2>Versão vertical (9:16)</h2>
     <div class="dica">Cria uma sequência vertical com a câmera de quem fala, enquadrada no rosto. As 3 câmeras ficam em trilhas separadas e as não usadas ficam desativadas.</div>
-    <div id="btnVertical" class="cartao"><div class="ico">📱</div><div class="tx"><div class="t1">Criar versão vertical (9:16)</div><div class="t2">Rosto enquadrado, 9:16</div></div></div>
-    <div class="aviso">Antes: deixe ativa a sequência do podcast JÁ MONTADA (com os cortes e câmeras feitos) e confira o trecho acima. Os cortes são reaproveitados; só o enquadramento muda.</div>
+    <div id="btnVertSeq" class="cartao"><div class="ico">📱</div><div class="tx"><div class="t1">CONVERTER SEQUÊNCIA COMPLETA</div><div class="t2">Do começo ao fim da sequência, em 9:16</div></div></div>
+    <div id="btnVertInOut" class="cartao"><div class="ico">✂️</div><div class="tx"><div class="t1">CONVERTER IN/OUT</div><div class="t2">Só entre os pontos In e Out</div></div></div>
+    <div class="aviso">Antes: deixe ativa a sequência do podcast JÁ MONTADA (com os cortes e câmeras feitos). Os cortes são reaproveitados; só o enquadramento muda. Para o In/Out: cursor no começo e tecla I, cursor no fim e tecla O.</div>
+
+    <h2>Trechos para viralizar (Instagram)</h2>
+    <div class="dica">Procura no que foi falado os momentos com mais chance de prender no Reels: começa com gancho, tem emoção, a ideia fecha. Precisa da transcrição feita (aba Legendas → Transcrever o podcast). É uma sugestão automática: você decide.</div>
+    <label for="viralDur">Duração dos cortes</label>
+    <select id="viralDur"><option value="15-30">Curtos (15 a 30 s)</option><option value="30-60" selected>Médios (30 a 60 s)</option><option value="60-90">Longos (60 a 90 s)</option></select>
+    <div id="btnViral" class="cartao"><div class="ico">🔥</div><div class="tx"><div class="t1">ACHAR TRECHOS PARA VIRALIZAR</div><div class="t2">Lista os melhores momentos, com nota</div></div></div>
+    <div id="viraisLista"></div>
   </div>
 
   <!-- CRIATIVOS -->

@@ -1950,19 +1950,9 @@ $("btnSondaVertical").addEventListener("click", () => semPressa(async () => {
 
 
 // --- Recorte vertical 9:16: monta a sequência e enquadra o rosto de quem fala ---
-$("btnVertical").addEventListener("click", () => semPressa(async () => {
+async function fluxoVertical(modo, janela) { // modo: "seq" (tudo), "inout" (pontos In/Out) ou "janela" ({ini,fim} em tempo da sequência)
   let etapa = "começando";
-  const lerTempo = (txt, padrao) => {
-    const t = String(txt || "").trim().replace(",", ".");
-    if (!t) return padrao;
-    const p = t.split(":").map(Number);
-    if (p.some((x) => !isFinite(x))) return NaN;
-    return p.length === 1 ? p[0] : p.length === 2 ? p[0] * 60 + p[1] : p[0] * 3600 + p[1] * 60 + p[2];
-  };
-  const INICIO = lerTempo($("estInicio").value, 60);
-  const FIM = lerTempo($("estFim").value, 90);
-  if (!(FIM > INICIO) || !(INICIO >= 0)) return mostrar("Confira Início e Fim (exemplo: 1:00 e 1:30). O Fim precisa ser maior que o Início.", true);
-  if (FIM - INICIO > 180) return mostrar("Escolha um trecho de até 3 minutos por vez.", true);
+  let INICIO = 0, FIM = 0;
   const LARG = 1080, ALT = 1920;
   const avisos = [];
   try {
@@ -1970,6 +1960,20 @@ $("btnVertical").addEventListener("click", () => semPressa(async () => {
     const projeto = await ppro.Project.getActiveProject();
     const origem = await projeto.getActiveSequence();
     if (!origem) return mostrar("Nenhuma sequência ativa (deixe a PODCAST ativa).", true);
+    {
+      const secT = async (f) => { const t = await f(); return t && t.seconds !== undefined ? t.seconds : Number(t); };
+      const fimSeq = await secT(() => origem.getEndTime());
+      if (!(fimSeq > 0)) return mostrar("A sequência está vazia.", true);
+      if (modo === "janela") { INICIO = Math.max(0, janela.ini); FIM = Math.min(fimSeq, janela.fim); }
+      else if (modo === "inout") {
+        let pin = 0, pout = 0;
+        try { pin = await secT(() => origem.getInPoint()); pout = await secT(() => origem.getOutPoint()); } catch (e) { pin = 0; pout = 0; }
+        INICIO = Math.max(0, pin); FIM = Math.min(pout, fimSeq);
+        if (!(FIM > INICIO + 0.5)) return mostrar("Marque o trecho na timeline: cursor no começo e tecla I, cursor no fim e tecla O. Depois clique de novo em CONVERTER IN/OUT.", true);
+      } else { INICIO = 0; FIM = fimSeq; }
+      if (FIM - INICIO > 900) { FIM = INICIO + 900; avisos.push("a sequência passa de 15 minutos: converti só os primeiros 15 minutos"); }
+      if (!(FIM > INICIO + 0.5)) return mostrar("Trecho curto demais.", true);
+    }
 
     // ---- 1. lê os cortes que JÁ estão na sequência (nada é reanalisado)
     etapa = "ler os cortes da sequência (deixe a sequência do podcast já montada ativa)";
@@ -2189,13 +2193,87 @@ $("btnVertical").addEventListener("click", () => semPressa(async () => {
   } catch (e) {
     mostrar((avisos.length ? "Avisos:\n- " + avisos.join("\n- ") + "\n\n" : "") + "Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
   }
+}
+
+$("btnVertSeq").addEventListener("click", () => semPressa(() => fluxoVertical("seq")));
+$("btnVertInOut").addEventListener("click", () => semPressa(() => fluxoVertical("inout")));
+
+// --- Trechos com chance de viralizar: sugere, você escolhe e converte ---
+async function arquivoParaSequencia(ppro, seq, wav) { // converte "tempo do arquivo de áudio" em "tempo da sequência"
+  const sec = async (f) => { const t = await f(); return t && t.seconds !== undefined ? t.seconds : Number(t); };
+  const nA = await seq.getAudioTrackCount();
+  const alvo = String(wav).toLowerCase().replace(/\\/g, "/");
+  for (let ai = 0; ai < nA; ai++) {
+    const tr = await seq.getAudioTrack(ai);
+    const its = await tr.getTrackItems(1, false);
+    const lista = [];
+    for (const it of its) {
+      try {
+        const cp = await ppro.ClipProjectItem.cast(await it.getProjectItem());
+        const c = String(await cp.getMediaFilePath()).toLowerCase().replace(/\\/g, "/");
+        if (c !== alvo) continue;
+        lista.push({ ini: await sec(() => it.getStartTime()), fim: await sec(() => it.getEndTime()), entrada: await sec(() => it.getInPoint()) });
+      } catch (e) { /* outro tipo de item */ }
+    }
+    if (!lista.length) continue;
+    lista.sort((a, b) => a.ini - b.ini);
+    return (f) => {
+      for (const c of lista) if (f >= c.entrada - 0.001 && f <= c.entrada + (c.fim - c.ini) + 0.001) return c.ini + (f - c.entrada);
+      const prox = lista.find((c) => c.entrada > f);
+      if (prox) return prox.ini;
+      const u = lista[lista.length - 1];
+      return u.fim;
+    };
+  }
+  return (f) => f; // não achei o áudio na sequência: assume que o tempo é o mesmo
+}
+
+let VIRAIS = [];
+$("btnViral").addEventListener("click", () => semPressa(async () => {
+  let etapa = "começando";
+  try {
+    const ppro = require("premierepro");
+    const projeto = await ppro.Project.getActiveProject();
+    const origem = await projeto.getActiveSequence();
+    if (!origem) return mostrar("Nenhuma sequência ativa (deixe a PODCAST ativa).", true);
+    etapa = "ler o áudio da sequência";
+    const wav = await wavDoPodcast(ppro, origem);
+    etapa = "procurar os melhores momentos";
+    const [dmin, dmax] = String($("viralDur").value || "30-60").split("-").map(Number);
+    const r = await comRelogio("Procurando os trechos com mais chance de prender...", () => chamar("/virais", { path: wav, min: dmin, max: dmax, quantidade: 8 }));
+    VIRAIS = r.trechos || [];
+    const caixa = $("viraisLista");
+    while (caixa.firstChild) caixa.removeChild(caixa.firstChild);
+    if (!VIRAIS.length) return mostrar("Não achei trechos nessa duração. Tente outra duração.", true);
+    VIRAIS.forEach((v, i) => {
+      const c = document.createElement("div"); c.className = "ed-card";
+      const t = document.createElement("div"); t.className = "ed-tit"; t.textContent = (i + 1) + ") " + fmt(v.ini) + " a " + fmt(v.fim) + "  ·  nota " + v.nota;
+      const tx = document.createElement("div"); tx.className = "dica"; tx.textContent = "“" + v.texto + "”";
+      const mo = document.createElement("div"); mo.className = "dica"; mo.style.color = "#b9acff"; mo.textContent = v.motivos.join(" · ");
+      const b = document.createElement("div"); b.className = "mini"; b.textContent = "📱 Converter este trecho em vertical";
+      b.addEventListener("click", () => semPressa(async () => {
+        try {
+          const proj = await ppro.Project.getActiveProject();
+          const seq = await proj.getActiveSequence();
+          const mapa = await arquivoParaSequencia(ppro, seq, wav);
+          await fluxoVertical("janela", { ini: mapa(v.ini), fim: mapa(v.fim) });
+        } catch (e) { mostrar("Erro ao converter este trecho:\n" + (e && e.message ? e.message : e), true); }
+      }));
+      c.appendChild(t); c.appendChild(tx); c.appendChild(mo); c.appendChild(b);
+      caixa.appendChild(c);
+    });
+    mostrar("Achei " + VIRAIS.length + " sugestões, da maior nota para a menor. Role a aba Vertical para vê-las e clique em Converter no trecho que gostar.");
+  } catch (e) {
+    mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
+  }
 }));
+
 
 
 // --- Abas do painel ---------------------------------------------------------
 (function () {
   const abas = ["Podcast", "Legendas", "Criativos", "Vertical", "Silencios", "Buscar", "Avancado"];
-  const comTrecho = new Set(["Vertical"]);
+  const comTrecho = new Set([]);
   function abrir(nome) {
     abas.forEach((a) => {
       const conteudo = $(a);
