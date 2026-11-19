@@ -2636,6 +2636,8 @@ $("btnViral").addEventListener("click", () => semPressa(async () => {
     caixa.appendChild(bSeq);
     caixa.appendChild(botoes); caixa.appendChild(detalhe);
     mostrar("Achei " + VIRAIS.length + " sugestões (🔴 91–100%, 🟠 61–90%, 🟣 abaixo). Marcadores na sequência: " + (mk.marcadores ? (mk.cores ? "sim, coloridos" : "sim (a cor está no emoji do nome)") : "não consegui (" + (mk.erro || "sem motivo") + ")") + ".\nClique em um botão colorido da lista para ir até o trecho.");
+    // cria sozinho a sequência nova com os trechos (o botão acima serve para refazer)
+    await montarSequenciaVirais(ppro, projeto, origem, VIRAIS.map((v) => ({ seqIni: v.seqIni, seqFim: v.seqFim, nota: v.nota, texto: v.texto })));
   } catch (e) {
     mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
   }
