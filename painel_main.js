@@ -3446,7 +3446,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const card = el("div", "ed-card");
     const cab = el("div"); cab.style.display = "flex"; cab.style.alignItems = "center"; cab.style.cursor = "pointer";
     cab.style.padding = "9px 10px"; cab.style.borderRadius = "8px"; cab.style.backgroundColor = "#2d2d46"; cab.style.marginBottom = aberta ? "6px" : "0";
-    const tt = el("div", "", titulo); tt.style.flex = "1"; tt.style.fontSize = "15px"; tt.style.fontWeight = "700"; tt.style.color = "#ffffff";
+    const tt = el("div", "", titulo); tt.style.flex = "1"; tt.style.fontSize = "16px"; tt.style.fontWeight = "700"; tt.style.color = "#ffffff";
     const sa = el("div", "", aberta ? "▸" : "▾"); sa.style.fontSize = "22px"; sa.style.color = aberta ? "#b9acff" : "#8a8a9c";
     cab.appendChild(tt); cab.appendChild(sa);
     cab.addEventListener("click", () => { C.sec[chave] = !aberta; salvarC(); desenharC(); });
@@ -3515,8 +3515,8 @@ $("btnTesteModelo").addEventListener("click", async () => {
       ab.addEventListener("click", () => { C.abertoT = C.abertoT === i ? -1 : i; desenharC(); agendarPreviaC(); });
       cab.appendChild(ab); t3.appendChild(cab);
       const ta = document.createElement("textarea");
-      ta.value = t.texto; ta.rows = i === 0 ? 5 : 3; ta.placeholder = i === 0 ? "Escreva a frase (ou use \"Escrever o que foi dito\")" : "Uma por linha, na ordem dos trechos. Ex.:\nMateus 5:5\nMateus 5:9";
-      ta.style.width = "100%"; ta.style.boxSizing = "border-box"; ta.style.backgroundColor = "#0f0f16"; ta.style.color = "#e6e6ee"; ta.style.border = "1px solid #3a3a4c"; ta.style.borderRadius = "8px"; ta.style.padding = "6px";
+      ta.value = t.texto; ta.rows = i === 0 ? 9 : 5; ta.style.fontSize = "16px"; ta.style.lineHeight = "22px"; ta.style.minHeight = (i === 0 ? 200 : 120) + "px"; ta.placeholder = i === 0 ? "Escreva a frase (ou use \"Escrever o que foi dito\")" : "Uma por linha, na ordem dos trechos. Ex.:\nMateus 5:5\nMateus 5:9";
+      ta.style.width = "100%"; ta.style.boxSizing = "border-box"; ta.style.backgroundColor = "#0f0f16"; ta.style.color = "#e6e6ee"; ta.style.border = "1px solid #3a3a4c"; ta.style.borderRadius = "8px"; ta.style.padding = "8px";
       ta.addEventListener("input", () => { t.texto = ta.value; agendarPreviaC(); });
       t3.appendChild(ta);
       if (i === 0) { const d0 = el("div", "rt", "Para a referência trocar, separe os trechos do texto com uma linha em branco: o 1º trecho usa a 1ª referência, o 2º usa a 2ª, e assim por diante."); d0.style.fontSize = "13px"; d0.style.color = "#8a8a9c"; t3.appendChild(d0); }

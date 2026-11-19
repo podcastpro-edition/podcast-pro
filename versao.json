@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.86",
-  "notas": "Horizontal/vertical sem pulo, vertical no tamanho certo, setas das caixas maiores e que giram",
+  "versao": "1.0.87",
+  "notas": "Caixa de texto do Criativo maior, letra maior e titulos padronizados em todas as abas",
   "arquivos": {
-    "server.py": "37d8f347293be27deee29d3ce48b38ff87b759c8dcdc8163fbf6b6252481f32a",
-    "painel_index.html": "5db58bc485a9a919665615c56ae83e42393dcaebbb359af701aa3c5d69c303ff",
-    "painel_main.js": "ef54d265f8db32cd30bf7fbfb0b8a509d0fa9bec1213fb0190de240dfcb7e879",
+    "server.py": "d9d6a07307063adae6d98fc8c78257d7ea1377f5827f2be0688642c1752690f6",
+    "painel_index.html": "cc2bc94e6849dcb1bde658130cff11e454f75c6b643dfd104638e7b0177fbcd1",
+    "painel_main.js": "bfe1c03b0e4038e176b5e37d910d55f3d0790ef6411b5de7e726e99c328053b5",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",
