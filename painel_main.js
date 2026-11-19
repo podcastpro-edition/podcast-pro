@@ -38,6 +38,15 @@ function carregando(ligar, erro) {
   }
 }
 
+// mostra um relógio enquanto uma tarefa demorada roda, para dar para ver que não travou
+async function comRelogio(texto, tarefa) {
+  const t0 = Date.now();
+  const pinta = () => { const s = Math.round((Date.now() - t0) / 1000); mostrar(texto + "\n(já faz " + s + " s" + (s > 150 ? " — está demorando mais que o normal" : "") + ")"); };
+  pinta();
+  const id = setInterval(pinta, 2000);
+  try { return await tarefa(); } finally { clearInterval(id); }
+}
+
 async function chamar(rota, corpo) {
   const resposta = await fetch(SERVICO + rota, {
     method: "POST",
@@ -957,13 +966,14 @@ async function garantirAudio(ppro, sequencia) {
   const nA = await sequencia.getAudioTrackCount();
   const faixas = [];
   for (let i = 0; i < nA; i++) {
+    mostrar("Lendo as trilhas de áudio da sequência: " + (i + 1) + " de " + nA + "...");
     try { faixas.push({ trilha: i, path: await caminhoDaTrilha(ppro, sequencia, "A", i) }); } catch (e) { /* trilha vazia */ }
   }
   const cameras = {};
   for (const v of camerasUsadas()) cameras[v] = await caminhoDaTrilha(ppro, sequencia, "V", parseInt(v.slice(1), 10) - 1);
   const palpite0 = faixas.find((f) => !Object.values(cameras).includes(f.path));
   const recorte = palpite0 ? await recorteDaTrilha(ppro, sequencia, palpite0.trilha) : null;
-  const r0 = await chamar("/avaliar_audios", { faixas, cameras, recorte, pessoas: alvo.map((p) => ({ nome: p.nome, camera: p.camera })) });
+  const r0 = await comRelogio("Analisando as trilhas de áudio (" + faixas.length + " trilhas)...\nSe já analisei esta sequência antes, é rápido.", () => chamar("/avaliar_audios", { faixas, cameras, recorte, pessoas: alvo.map((p) => ({ nome: p.nome, camera: p.camera })) }));
   const r = r0;
   const rot = (i) => "A" + (i + 1);
   if (!LISTA_CONFIRMADA && r.modo === "microfones" && r.mics.length > lerPessoas().pessoas.length) {
@@ -1944,12 +1954,11 @@ $("btnVertical").addEventListener("click", () => semPressa(async () => {
     for (const v of camerasUsadas()) cameras[v] = await caminhoDaTrilha(ppro, origem, "V", parseInt(v.slice(1), 10) - 1);
 
     etapa = "calcular cortes e rostos";
-    mostrar("Calculando os cortes e procurando os rostos...\n(uns 1 a 2 minutos; não mexa no Premiere)");
-    const plano = await chamar("/plano_vertical", {
+    const plano = await comRelogio("Calculando os cortes e procurando os rostos...\n(na primeira vez leva 1 a 2 minutos; repetindo com a mesma sequência é bem mais rápido; não mexa no Premiere)", () => chamar("/plano_vertical", {
       path: wav, cameras,
       pessoas: PODCAST.pessoas.map((p) => ({ nome: p.nome, canal: p.canal, camera: p.camera })),
       geral: PODCAST.geral, inicio: INICIO, fim: FIM,
-    });
+    }));
     const pecas = plano.pecas;
 
     etapa = "achar os arquivos no projeto";

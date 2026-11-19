@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.87"
+VERSAO = "1.0.88"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -636,6 +636,52 @@ def ligar_vozes_as_pessoas(res_vozes, wav, pessoas, cameras, recorte=None):
 
 
 # ----------------------------------------- escolher sozinho o melhor áudio da sequência
+
+_CACHE_ANALISE = {}
+
+
+def _chave_cache(nome, args, kw):
+    """Chave que muda se qualquer arquivo envolvido mudar (tamanho/data) ou se qualquer ajuste mudar."""
+    import json as _j
+    arquivos = set()
+
+    def varre(x):
+        if isinstance(x, str) and os.path.isfile(x):
+            arquivos.add(x)
+        elif isinstance(x, dict):
+            for v in x.values():
+                varre(v)
+        elif isinstance(x, (list, tuple)):
+            for v in x:
+                varre(v)
+    varre(args)
+    varre(kw)
+    sel = []
+    for a in sorted(arquivos):
+        try:
+            st = os.stat(a)
+            sel.append((a, st.st_size, int(st.st_mtime)))
+        except OSError:
+            sel.append((a, 0, 0))
+    return nome + _j.dumps([args, kw, sel], sort_keys=True, default=str)
+
+
+def com_cache(f):
+    """Guarda o resultado da análise pesada: repetir com os mesmos arquivos e ajustes devolve na hora."""
+    import copy
+
+    def g(*args, **kw):
+        k = _chave_cache(f.__name__, args, kw)
+        if k in _CACHE_ANALISE:
+            return copy.deepcopy(_CACHE_ANALISE[k])
+        r = f(*args, **kw)
+        if len(_CACHE_ANALISE) > 12:
+            _CACHE_ANALISE.clear()
+        _CACHE_ANALISE[k] = copy.deepcopy(r)
+        return r
+    g.__name__ = f.__name__
+    return g
+
 
 def avaliar_audios(faixas, cameras, pessoas, recorte=None):
     """faixas: [{trilha, path}] (uma por trilha de áudio da sequência, 0 = A1).
@@ -2672,6 +2718,10 @@ def rostos_no_trecho(caminho, ini, fim, passo=0.5, largura_analise=640):
         faces = [((x + w / 2) / aw, (y + h / 2) / ah, w / aw, h / ah) for (x, y, w, h) in achados]
         saida.append((ini + i * passo, faces))
     return W, H, saida
+
+
+avaliar_audios = com_cache(avaliar_audios)
+plano_podcast = com_cache(plano_podcast)
 
 
 def plano_vertical(wav, cameras, pessoas, geral, inicio, fim, duracao_minima=2.0):
