@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.101",
-  "notas": "Reinicio do servidor no Windows mais seguro (sem processo fantasma)",
+  "versao": "1.0.102",
+  "notas": "Corrigir buracos: so mexe nos clipes novos e garante uma camera ligada em cada buraco",
   "arquivos": {
-    "server.py": "251ca1897c4fae7cbf65a4f876b02d334f3839eab85b2213876412f244a25b33",
+    "server.py": "95d726f70b991b24acd68be5e44c24f2455aae221eeca18d47a4cd8ffbf2536d",
     "painel_index.html": "e27141dec7284f2bf2a2038cd63e17e9b3f955384d1a6ef966049edbe730ecd2",
-    "painel_main.js": "1614ca82e10b1955dcbe15b62e86012b4baffb3e2e32ce6ccd211f683a3259e7",
+    "painel_main.js": "bf8a3ea452ceeddff79cbc4cff121d477062ed8101e43544724b6eb21b50dfcf",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",

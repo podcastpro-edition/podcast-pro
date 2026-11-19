@@ -2431,6 +2431,19 @@ async function corrigirBuracosSeq(ppro, projeto, seq) { // tapa os trechos sem c
       itens[cam] = a;
     }
     const editor = await ppro.SequenceEditor.getEditor(seq);
+    // guarda o que já existia em cada trilha, para depois saber quais clipes são os NOVOS (só mexo nesses)
+    const chave = (ini, fim) => ini.toFixed(2) + "|" + fim.toFixed(2);
+    const lerTrilhaItens = async (ci) => {
+      const its = await (await seq.getVideoTrack(parseInt(cams[ci].slice(1), 10) - 1)).getTrackItems(1, false);
+      const r = [];
+      for (const it of its) {
+        let des = false; try { des = !!(await it.isDisabled()); } catch (e) { des = false; }
+        r.push({ it, ini: await sec(() => it.getStartTime()), fim: await sec(() => it.getEndTime()), des });
+      }
+      return r;
+    };
+    const antes = [];
+    for (let ci = 0; ci < cams.length; ci++) antes.push(new Set((await lerTrilhaItens(ci)).map((x) => chave(x.ini, x.fim))));
     let n = 0;
     for (const b of buracos) {
       n++;
@@ -2448,26 +2461,39 @@ async function corrigirBuracosSeq(ppro, projeto, seq) { // tapa os trechos sem c
         const tI = await ppro.TickTime.createWithSeconds(fa), tF = await ppro.TickTime.createWithSeconds(fb);
         await executar(projeto, "Buracos: entrada e saída", () => itens[cam].clip.createSetInOutPointsAction(tI, tF));
         const tp = await ppro.TickTime.createWithSeconds(b.g0);
-        await executar(projeto, "Buracos: colocar", () => editor.createOverwriteItemAction(itens[cam].item, tp, ci, ci));
+        await executar(projeto, "Buracos: colocar", () => editor.createOverwriteItemAction(itens[cam].item, tp, parseInt(cam.slice(1), 10) - 1, parseInt(cam.slice(1), 10) - 1));
       }
     }
     for (const cam of cams) await executar(projeto, "Buracos: limpar", () => itens[cam].clip.createClearInOutPointsAction());
 
-    // só a câmera do trecho anterior fica ligada em cada buraco; as outras ficam desativadas
+    // só a câmera do trecho anterior fica ligada em cada buraco; as outras (apenas os clipes NOVOS) ficam desativadas
     etapa = "desativar as câmeras que não são a escolhida";
+    const novos = [];
     for (let ci = 0; ci < cams.length; ci++) {
-      const cam = cams[ci];
-      const its = await (await seq.getVideoTrack(ci)).getTrackItems(1, false);
-      const alvos = [];
-      for (const it of its) {
-        const ini = await sec(() => it.getStartTime());
-        for (const b of buracos) if (b.ativo !== cam && Math.abs(ini - b.g0) < 0.06) { alvos.push(it); break; }
-      }
-      for (let k = 0; k < alvos.length; k += 25) {
-        const lote = alvos.slice(k, k + 25);
-        projeto.lockedAccess(() => { projeto.executeTransaction((c) => { for (const it of lote) c.addAction(it.createSetDisabledAction(true)); }, "Buracos: desativar"); });
-        await dormir(500);
-      }
+      const atual = await lerTrilhaItens(ci);
+      novos.push(atual.filter((x) => !antes[ci].has(chave(x.ini, x.fim))).map((x) => ({ ...x, cam: cams[ci] })));
+    }
+    const doBuraco = (x) => { let m = null, d = 1e9; for (const b of buracos) { const dd = Math.abs(x.ini - b.g0); if (dd < d) { d = dd; m = b; } } return d < 0.15 ? m : null; };
+    const alvos = [];
+    for (const lista of novos) for (const x of lista) { const b = doBuraco(x); if (b && b.ativo !== x.cam) alvos.push(x.it); }
+    for (let k = 0; k < alvos.length; k += 25) {
+      const lote = alvos.slice(k, k + 25);
+      projeto.lockedAccess(() => { projeto.executeTransaction((c) => { for (const it of lote) c.addAction(it.createSetDisabledAction(true)); }, "Buracos: desativar"); });
+      await dormir(500);
+    }
+    // confere: em cada buraco precisa sobrar uma câmera ligada; se não sobrou, liga a escolhida
+    etapa = "conferir os buracos tapados";
+    const ligar = [];
+    const todosNovos = novos.flat();
+    for (const b of buracos) {
+      const meus = todosNovos.filter((x) => doBuraco(x) === b);
+      const escolhida = meus.find((x) => x.cam === b.ativo) || meus[0];
+      if (escolhida) ligar.push(escolhida.it);
+    }
+    for (let k = 0; k < ligar.length; k += 25) {
+      const lote = ligar.slice(k, k + 25);
+      projeto.lockedAccess(() => { projeto.executeTransaction((c) => { for (const it of lote) c.addAction(it.createSetDisabledAction(false)); }, "Buracos: ligar a câmera escolhida"); });
+      await dormir(500);
     }
     return { n: buracos.length, total, avisos, texto: "tapei " + buracos.length + " buraco(s), " + total.toFixed(1) + " s no total, usando a câmera do trecho anterior (" + buracos.slice(0, 6).map((b) => fmt(b.g0)).join(", ") + (buracos.length > 6 ? "..." : "") + ")" + (avisos.length ? "\nAvisos:\n- " + avisos.join("\n- ") : "") };
 }
