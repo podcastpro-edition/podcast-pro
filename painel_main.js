@@ -3109,7 +3109,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       campo.addEventListener("input", () => { E.nome = campo.value; for (const o of Array.from(document.querySelectorAll(".edNomeCampo"))) if (o !== campo) o.value = campo.value; });
       w.appendChild(campo);
       const bt = el("div", "ed-btn verde", "💾 Salvar estilo"); bt.style.marginTop = "8px";
-      bt.addEventListener("click", salvarEstilo);
+      bt.addEventListener("click", () => salvarEstilo(bt));
       w.appendChild(bt);
       return w;
     };
@@ -3270,7 +3270,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     nome.addEventListener("input", () => { E.nome = nome.value; for (const o of Array.from(document.querySelectorAll(".edNomeCampo"))) if (o !== nome) o.value = nome.value; });
     cNome.appendChild(nome);
     const salvar = el("div", "ed-btn verde", "💾 Salvar estilo"); salvar.style.marginTop = "8px";
-    salvar.addEventListener("click", salvarEstilo);
+    salvar.addEventListener("click", () => salvarEstilo(salvar));
     cNome.appendChild(salvar);
     caixa.appendChild(cNome);
     if (E.editando) {
@@ -3285,10 +3285,24 @@ $("btnTesteModelo").addEventListener("click", async () => {
   }
   const mensagem = (t, erro) => { const m = $("edMsg"); if (m) { m.textContent = t; m.style.color = erro ? "#ff8a80" : "#9a9a9a"; } };
 
-  async function salvarEstilo() {
+  async function salvarEstilo(botao) {
     try {
       const nome = (E.nome || "").trim();
-      if (!nome) return mensagem("Dê um nome ao estilo.", true);
+      if (!nome) {
+        // avisa no próprio botão: fica vermelho com a mensagem e o campo do nome também
+        if (botao && botao.style) {
+          botao.textContent = "⚠ Dê um nome ao estilo primeiro";
+          botao.style.backgroundColor = "#b3382c";
+          const campos = Array.from(document.querySelectorAll(".edNomeCampo"));
+          for (const c of campos) c.style.border = "1px solid #ff6b5e";
+          if (campos[0] && campos[0].focus) { try { campos[0].focus(); } catch (e) { /* ok */ } }
+          setTimeout(() => {
+            botao.textContent = "💾 Salvar estilo"; botao.style.backgroundColor = "";
+            for (const c of campos) c.style.border = "";
+          }, 2500);
+        }
+        return mensagem("Dê um nome ao estilo.", true);
+      }
       mensagem("Salvando...");
       const r = await chamar("/estilo/salvar", { nome, def: paraDef() });
       await recarregarEstilos();
