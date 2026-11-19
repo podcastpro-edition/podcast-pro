@@ -2278,6 +2278,168 @@ async function audioDaSequencia(ppro, seq) {
   return { wav, pessoas, recorte };
 }
 
+// Cria uma sequência nova só com os trechos escolhidos (mesmos cortes de câmera e áudio da sequência original),
+// um depois do outro, cada um com marcador na cor da sua faixa (🔴 🟠 🟣)
+async function montarSequenciaVirais(ppro, projeto, origem, lista) {
+  let etapa = "começando";
+  const avisos = [];
+  const sec = async (f) => { const t = await f(); return t && t.seconds !== undefined ? t.seconds : Number(t); };
+  try {
+    etapa = "ler a sequência original";
+    mostrar("Lendo os cortes da sequência original...");
+    const EXT = /\.(mp4|mov|mxf|avi|mkv|m4v)$/i;
+    const lerItens = async (tr) => {
+      const its = await tr.getTrackItems(1, false);
+      const r = [];
+      for (const it of its) {
+        const ini = await sec(() => it.getStartTime()), fim = await sec(() => it.getEndTime());
+        if (!lista.some((w) => fim > w.seqIni + 0.05 && ini < w.seqFim - 0.05)) continue;
+        let des = false; try { des = !!(await it.isDisabled()); } catch (e) { des = false; }
+        let caminho = null;
+        try { const cp = await ppro.ClipProjectItem.cast(await it.getProjectItem()); caminho = await cp.getMediaFilePath(); } catch (e) { caminho = null; }
+        r.push({ ini, fim, entrada: await sec(() => it.getInPoint()), des, caminho });
+      }
+      r.sort((a, b) => a.ini - b.ini);
+      return r;
+    };
+    const nV = await origem.getVideoTrackCount();
+    const cams = [], videos = {}, cameras = {};
+    for (let i = 0; i < nV; i++) {
+      const l = await lerItens(await origem.getVideoTrack(i));
+      const comArq = l.find((c) => c.caminho && EXT.test(c.caminho));
+      if (!l.length || !comArq) continue;
+      const nome = "V" + (i + 1);
+      cams.push(nome); videos[nome] = l; cameras[nome] = comArq.caminho;
+    }
+    if (!cams.length) throw new Error("não achei câmeras nos trechos escolhidos");
+    const doItem = (cam, T) => {
+      const l = videos[cam];
+      let m = l.find((c) => T >= c.ini - 0.001 && T <= c.fim + 0.001);
+      if (!m) m = l.reduce((x, y) => (Math.abs(y.ini - T) < Math.abs(x.ini - T) ? y : x));
+      return m;
+    };
+    const arquivoT = (cam, T) => { const m = doItem(cam, T); return m.entrada + (T - m.ini); };
+
+    // peças de cada trecho (cortes iguais aos da sequência original), com a posição na sequência nova
+    const pecas = [];
+    const janelas = [];
+    let saida = 0;
+    for (const w of lista) {
+      let cortes = [w.seqIni, w.seqFim];
+      for (const cam of cams) for (const c of videos[cam]) { if (c.ini > w.seqIni + 0.03 && c.ini < w.seqFim - 0.03) cortes.push(c.ini); if (c.fim > w.seqIni + 0.03 && c.fim < w.seqFim - 0.03) cortes.push(c.fim); }
+      cortes.sort((a, b) => a - b);
+      cortes = cortes.filter((v, k) => k === 0 || v - cortes[k - 1] > 0.04);
+      let ult = cams[0];
+      const ini0 = saida;
+      for (let k = 0; k + 1 < cortes.length; k++) {
+        const a = cortes[k], b = cortes[k + 1], meio = (a + b) / 2;
+        let ativa = null;
+        for (const cam of cams) { if (videos[cam].some((c) => !c.des && meio >= c.ini && meio <= c.fim)) { ativa = cam; break; } }
+        if (!ativa) ativa = ult;
+        ult = ativa;
+        const arq = {};
+        for (const cam of cams) arq[cam] = [arquivoT(cam, a + 0.001), arquivoT(cam, b - 0.001) + 0.001];
+        pecas.push({ a, b, t: saida + (a - w.seqIni), camera: ativa, arq });
+      }
+      saida += w.seqFim - w.seqIni;
+      janelas.push({ ...w, seqIni: ini0, seqFim: saida });
+    }
+
+    etapa = "achar os arquivos no projeto";
+    const itens = {};
+    const garantirClipe = async (nome, caminho) => {
+      if (itens[nome]) return itens[nome];
+      let achado = await acharClipe(ppro, projeto, caminho);
+      if (!achado) { await projeto.importFiles([caminho]); await dormir(1500); achado = await acharClipe(ppro, projeto, caminho); }
+      if (!achado) throw new Error("não achei " + nome + " no projeto");
+      itens[nome] = achado; return achado;
+    };
+    for (const cam of cams) await garantirClipe(cam, cameras[cam]);
+
+    const hora = new Date();
+    const nomeSeq = "VIRAIS " + String(hora.getHours()).padStart(2, "0") + "h" + String(hora.getMinutes()).padStart(2, "0");
+    let sequencia = null, editor = null;
+    const trilhas = {};
+    const total = cams.length * pecas.length;
+    let feitas = 0;
+    for (let ci = 0; ci < cams.length; ci++) {
+      const cam = cams[ci];
+      const alvo = itens[cam];
+      for (let i = 0; i < pecas.length; i++) {
+        const p = pecas[i];
+        feitas++;
+        mostrar("Montando a sequência de virais (" + cam + "): peça " + feitas + " de " + total + "\nNão mexa no Premiere.");
+        etapa = "definir entrada/saída da peça " + feitas;
+        const tI = await ppro.TickTime.createWithSeconds(p.arq[cam][0]);
+        const tF = await ppro.TickTime.createWithSeconds(p.arq[cam][1]);
+        await executar(projeto, "Virais: entrada e saída", () => alvo.clip.createSetInOutPointsAction(tI, tF));
+        if (!sequencia) {
+          etapa = "criar a sequência nova";
+          sequencia = await projeto.createSequenceFromMedia(nomeSeq, alvo.clip);
+          await dormir(1000);
+          editor = await ppro.SequenceEditor.getEditor(sequencia);
+        } else {
+          etapa = "colocar a peça " + feitas + " na timeline";
+          const t = ci === 0 ? await sequencia.getEndTime() : await ppro.TickTime.createWithSeconds(p.t);
+          await executar(projeto, "Virais: colocar peça", () => editor.createOverwriteItemAction(alvo.item, t, ci, ci));
+        }
+      }
+      const nVn = await sequencia.getVideoTrackCount();
+      if (nVn <= ci) { avisos.push(cam + ": a trilha não foi criada"); trilhas[cam] = []; continue; }
+      const q = await (await sequencia.getVideoTrack(ci)).getTrackItems(1, false);
+      if (q.length !== pecas.length) avisos.push(cam + ": esperava " + pecas.length + " pedaços, achei " + q.length);
+      trilhas[cam] = q;
+    }
+    etapa = "desativar os pedaços não usados";
+    for (const cam of cams) {
+      const q = trilhas[cam] || [];
+      const alvos = [];
+      for (let i = 0; i < Math.min(q.length, pecas.length); i++) if (pecas[i].camera !== cam) alvos.push(q[i]);
+      for (let k = 0; k < alvos.length; k += 25) {
+        const lote = alvos.slice(k, k + 25);
+        projeto.lockedAccess(() => { projeto.executeTransaction((c) => { for (const it of lote) c.addAction(it.createSetDisabledAction(true)); }, "Virais: desativar pedaços"); });
+        await dormir(500);
+      }
+    }
+
+    // áudio da fala (microfones), com os mesmos cortes
+    etapa = "copiar o áudio";
+    const arquivosCamera = new Set(Object.values(cameras));
+    const nA = await origem.getAudioTrackCount();
+    const baseA = cams.length;
+    let feitasA = 0;
+    for (let ai = 0; ai < nA; ai++) {
+      const tr = await origem.getAudioTrack(ai);
+      let muda = false; try { if (typeof tr.isMuted === "function") muda = !!(await tr.isMuted()); } catch (e) { muda = false; }
+      if (muda) continue;
+      const l = (await lerItens(tr)).filter((c) => c.caminho && !arquivosCamera.has(c.caminho) && !c.des);
+      for (const c of l) {
+        for (let wi = 0; wi < lista.length; wi++) {
+          const w = lista[wi];
+          const a = Math.max(c.ini, w.seqIni), b = Math.min(c.fim, w.seqFim);
+          if (b - a < 0.04) continue;
+          feitasA++;
+          mostrar("Copiando o áudio (A" + (ai + 1) + "): trecho " + feitasA + "\nNão mexa no Premiere.");
+          const ach = await garantirClipe("A:" + c.caminho, c.caminho);
+          const f0 = await ppro.TickTime.createWithSeconds(c.entrada + (a - c.ini)), f1 = await ppro.TickTime.createWithSeconds(c.entrada + (b - c.ini));
+          await executar(projeto, "Virais: entrada e saída (áudio)", () => ach.clip.createSetInOutPointsAction(f0, f1));
+          const tp = await ppro.TickTime.createWithSeconds(janelas[wi].seqIni + (a - w.seqIni));
+          await executar(projeto, "Virais: colocar áudio", () => editor.createOverwriteItemAction(ach.item, tp, 0, baseA + ai));
+        }
+      }
+    }
+    for (const cam of cams) await executar(projeto, "Virais: limpar", () => itens[cam].clip.createClearInOutPointsAction());
+    for (const k of Object.keys(itens)) if (k.indexOf("A:") === 0) await executar(projeto, "Virais: limpar", () => itens[k].clip.createClearInOutPointsAction());
+    try { for (let i = 0; i < baseA; i++) await (await sequencia.getAudioTrack(i)).setMute(true); } catch (e) { avisos.push("não consegui silenciar o áudio das câmeras"); }
+
+    etapa = "marcar os trechos com as cores";
+    const mk = await marcarVirais(ppro, projeto, sequencia, janelas);
+    mostrar("Pronto: sequência " + nomeSeq + " com " + lista.length + " trechos (" + Math.round(saida) + " s), na ordem da lista (maior chance primeiro). Cada trecho tem um marcador " + (mk.marcadores ? (mk.cores ? "colorido" : "com o emoji da faixa no nome") : "(não consegui marcar)") + ": 🔴 91–100%, 🟠 61–90%, 🟣 abaixo.\n" + (avisos.length ? "AVISOS:\n- " + avisos.join("\n- ") : ""));
+  } catch (e) {
+    mostrar((avisos.length ? "Avisos:\n- " + avisos.join("\n- ") + "\n\n" : "") + "Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
+  }
+}
+
 let VIRAIS = [];
 let VIRAL_DUR = "30-60";
 (function () {
@@ -2416,6 +2578,15 @@ $("btnViral").addEventListener("click", () => semPressa(async () => {
       }));
       botoes.appendChild(b);
     });
+    const bSeq = document.createElement("div"); bSeq.className = "cartao";
+    bSeq.innerHTML = '<div class="ico">🎬</div><div class="tx"><div class="t1">CRIAR SEQUÊNCIA COM ESSES TRECHOS</div><div class="t2">Puxa os trechos para uma sequência nova, com as cores</div></div>';
+    bSeq.addEventListener("click", () => semPressa(async () => {
+      const proj = await ppro.Project.getActiveProject();
+      const seq = await proj.getActiveSequence();
+      if (!seq) return mostrar("Nenhuma sequência ativa.", true);
+      await montarSequenciaVirais(ppro, proj, seq, VIRAIS.map((v) => ({ seqIni: v.seqIni, seqFim: v.seqFim, nota: v.nota, texto: v.texto })));
+    }));
+    caixa.appendChild(bSeq);
     caixa.appendChild(botoes); caixa.appendChild(detalhe);
     mostrar("Achei " + VIRAIS.length + " sugestões (🔴 91–100%, 🟠 61–90%, 🟣 abaixo). Marcadores na sequência: " + (mk.marcadores ? (mk.cores ? "sim, coloridos" : "sim (a cor está no emoji do nome)") : "não consegui (" + (mk.erro || "sem motivo") + ")") + ".\nClique em um botão colorido da lista para ir até o trecho.");
   } catch (e) {

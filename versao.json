@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.105",
-  "notas": "Virais: usa a transcricao ja feita se ela cobre o trecho que a sequencia usa",
+  "versao": "1.0.106",
+  "notas": "Virais: botao Criar sequencia com esses trechos (marcadores coloridos)",
   "arquivos": {
-    "server.py": "1459203ca5bc1f977314fef4f3f9ac9f876a5f094a1e014c8fef585263b4f63f",
+    "server.py": "9d691d8aa119bf9e152c4405fce2a04853cf5780634beab879bf77ba1be0d1a5",
     "painel_index.html": "e27141dec7284f2bf2a2038cd63e17e9b3f955384d1a6ef966049edbe730ecd2",
-    "painel_main.js": "807c8e6afef5eb10ce3dbe8be98aa218b4836e832100fc0e89f7720cb21bd63f",
+    "painel_main.js": "fd3b2a2eeb9b1a315fa83117414629c1dff3569ee2119af132713c7db4b8dafd",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",
