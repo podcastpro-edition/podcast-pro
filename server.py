@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.100"
+VERSAO = "1.0.101"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -3504,6 +3504,15 @@ def _reiniciar_servidor():
         sys.stdout.flush()
     except Exception:
         pass
+    if os.name == "nt":
+        # no Windows o os.execv não substitui o processo (ele deixa um fantasma segurando a porta):
+        # liga um servidor novo separado e encerra este
+        try:
+            subprocess.Popen([sys.executable, os.path.abspath(__file__)],
+                             creationflags=0x00000008 | 0x00000200, close_fds=True)
+        except Exception:
+            os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)])
+        os._exit(0)
     os.execv(sys.executable, [sys.executable, os.path.abspath(__file__)])
 
 

@@ -1,8 +1,8 @@
 {
-  "versao": "1.0.100",
-  "notas": "Montagem do podcast tapa sozinha os buracos de camera no final",
+  "versao": "1.0.101",
+  "notas": "Reinicio do servidor no Windows mais seguro (sem processo fantasma)",
   "arquivos": {
-    "server.py": "c28f368d9acfc49d6d818f840990ca5af0235faaf875ff28ee519a40a2b81db3",
+    "server.py": "251ca1897c4fae7cbf65a4f876b02d334f3839eab85b2213876412f244a25b33",
     "painel_index.html": "e27141dec7284f2bf2a2038cd63e17e9b3f955384d1a6ef966049edbe730ecd2",
     "painel_main.js": "1614ca82e10b1955dcbe15b62e86012b4baffb3e2e32ce6ccd211f683a3259e7",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
