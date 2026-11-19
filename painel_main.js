@@ -2793,7 +2793,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
         if (!ARRASTE) { E.caixas = rp.caixas || []; montarMolduras(); }
         const im = $("edPrevia");
         ULTIMA_PREVIA = SERVICO + "/painel/img/prev_editor.png?t=" + Date.now();
-        if (im) im.src = ULTIMA_PREVIA;
+        if (im) { im.src = ULTIMA_PREVIA; ajustarPalco("edMoldura", "edPrevia", "edOverlay"); setTimeout(() => { ajustarPalco("edMoldura", "edPrevia", "edOverlay"); montarMolduras(); }, 120); }
       } catch (e) { const m = $("edMsg"); if (m) m.textContent = "Prévia: " + (e && e.message ? e.message : e); }
     }, 250);
   }
@@ -3083,8 +3083,18 @@ $("btnTesteModelo").addEventListener("click", async () => {
     m.style.height = H + "px";
     const iw = vert ? Math.round(H * 9 / 16) : W, esq = vert ? Math.round((W - iw) / 2) : 0;
     im.style.width = iw + "px"; im.style.height = H + "px"; im.style.marginLeft = esq + "px";
+    im.style.maxWidth = iw + "px"; im.style.maxHeight = H + "px";
+    try { im.setAttribute("width", String(iw)); im.setAttribute("height", String(H)); } catch (e) { /* segue */ }
     const ov = idOv ? $(idOv) : null;
     if (ov) { ov.style.left = esq + "px"; ov.style.top = "0px"; ov.style.width = iw + "px"; ov.style.height = H + "px"; }
+  }
+  // troca horizontal/vertical e liga/desliga guias SEM redesenhar a aba (assim a página não pula)
+  function trocarFormatoLeve(st, v, botoes, idMold, idImg, idOv) {
+    st.formato = v;
+    botoes.forEach(([b, vv]) => { b.style.backgroundColor = vv === v ? "#4a3fa0" : ""; });
+    const im = $(idImg); if (im) im.setAttribute("data-vert", v === "v" ? "1" : "0");
+    ajustarPalco(idMold, idImg, idOv);
+    const ov = idOv ? $(idOv) : null; if (ov) ov.innerHTML = "";
   }
   let MODO_CRIATIVO = false;
   function desenhar() { // redesenha sem o painel "pular": guarda a rolagem e reserva o espaço da prévia
@@ -3138,15 +3148,17 @@ $("btnTesteModelo").addEventListener("click", async () => {
     prev.appendChild(el("div", "ed-tit", "Prévia (como a legenda fica parada)"));
     // formato do vídeo: horizontal ou vertical
     const fm = el("div"); fm.style.display = "flex"; fm.style.marginBottom = "6px";
+    const botoesF = [];
     for (const [v, n] of [["h", "Vídeo horizontal"], ["v", "Vídeo vertical"]]) {
       const b = el("div", "ed-btn", n); b.style.marginRight = "6px"; b.style.width = "auto"; b.style.paddingLeft = "10px"; b.style.paddingRight = "10px";
       if ((E.formato || "h") === v) { b.style.backgroundColor = "#4a3fa0"; b.style.color = "#ffffff"; }
-      b.addEventListener("click", () => { E.formato = v; ULTIMA_PREVIA = ""; desenhar(); agendarPrevia(); });
+      botoesF.push([b, v]);
+      b.addEventListener("click", () => { trocarFormatoLeve(E, v, botoesF, "edMoldura", "edPrevia", "edOverlay"); agendarPrevia(); });
       fm.appendChild(b);
     }
     const bg = el("div", "ed-btn", E.guias ? "Guias: ligadas" : "Guias: desligadas"); bg.style.width = "auto"; bg.style.paddingLeft = "10px"; bg.style.paddingRight = "10px";
     if (E.guias) { bg.style.backgroundColor = "#4a3fa0"; }
-    bg.addEventListener("click", () => { E.guias = !E.guias; desenhar(); agendarPrevia(); });
+    bg.addEventListener("click", () => { E.guias = !E.guias; bg.textContent = E.guias ? "Guias: ligadas" : "Guias: desligadas"; bg.style.backgroundColor = E.guias ? "#4a3fa0" : ""; agendarPrevia(); });
     fm.appendChild(bg);
     prev.appendChild(fm);
     const moldura = el("div"); moldura.id = "edMoldura"; moldura.style.position = "relative";
@@ -3229,7 +3241,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       it.appendChild(tx);
       const alca = el("div", "", "≡"); alca.style.width = "24px"; alca.style.height = "24px"; alca.style.lineHeight = "24px"; alca.style.textAlign = "center"; alca.style.fontSize = "20px"; alca.style.color = "#8a8a9c"; alca.style.cursor = "grab"; alca.style.flexShrink = "0";
       alca.addEventListener("mousedown", (ev) => { ev.stopPropagation(); ev.preventDefault(); iniciarArraste(i); });
-      const abre = el("div", "", "▾"); abre.style.width = "26px"; abre.style.height = "24px"; abre.style.lineHeight = "24px"; abre.style.textAlign = "center"; abre.style.marginLeft = "4px"; abre.style.color = i === E.sel ? "#b9acff" : "#8a8a9c"; abre.style.fontSize = "15px";
+      const abre = el("div", "", i === E.sel ? "▸" : "▾"); abre.style.width = "30px"; abre.style.height = "28px"; abre.style.lineHeight = "28px"; abre.style.textAlign = "center"; abre.style.marginLeft = "4px"; abre.style.color = i === E.sel ? "#b9acff" : "#8a8a9c"; abre.style.fontSize = "22px";
       abre.addEventListener("click", (ev) => { ev.stopPropagation(); E.sel = (E.sel === i) ? -1 : i; desenhar(); agendarPrevia(); });
       it.appendChild(abre);
       itens.push(it);
@@ -3253,7 +3265,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const an = el("div", "ed-card");
     const cab = el("div", "ed-tit"); cab.style.display = "flex"; cab.style.alignItems = "center"; cab.style.cursor = "pointer"; cab.style.margin = "0";
     const tt = el("div", "", "Animação"); tt.style.flex = "1";
-    const sa = el("div", "", "▾"); sa.style.color = E.animAberta ? "#b9acff" : "#8a8a9c"; sa.style.paddingRight = "6px";
+    const sa = el("div", "", E.animAberta ? "▸" : "▾"); sa.style.fontSize = "22px"; sa.style.color = E.animAberta ? "#b9acff" : "#8a8a9c"; sa.style.paddingRight = "6px";
     cab.appendChild(tt); cab.appendChild(sa);
     cab.addEventListener("click", () => { E.animAberta = !E.animAberta; desenhar(); agendarPrevia(); });
     an.appendChild(cab);
@@ -3414,7 +3426,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       try {
         await chamar("/criativo/previa", { def: defC(), formato: C.formato });
         ULTIMA_C = SERVICO + "/painel/img/prev_criativo.png?t=" + Date.now();
-        const im = $("crPrevia"); if (im) im.src = ULTIMA_C;
+        const im = $("crPrevia"); if (im) { im.src = ULTIMA_C; ajustarPalco("crMoldura", "crPrevia", null); setTimeout(() => ajustarPalco("crMoldura", "crPrevia", null), 120); }
       } catch (e) { msgC("Prévia: " + (e && e.message ? e.message : e), true); }
     }, 300);
   }
@@ -3435,7 +3447,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
     const cab = el("div"); cab.style.display = "flex"; cab.style.alignItems = "center"; cab.style.cursor = "pointer";
     cab.style.padding = "9px 10px"; cab.style.borderRadius = "8px"; cab.style.backgroundColor = "#2d2d46"; cab.style.marginBottom = aberta ? "6px" : "0";
     const tt = el("div", "", titulo); tt.style.flex = "1"; tt.style.fontSize = "15px"; tt.style.fontWeight = "700"; tt.style.color = "#ffffff";
-    const sa = el("div", "", "▾"); sa.style.fontSize = "16px"; sa.style.color = aberta ? "#b9acff" : "#8a8a9c";
+    const sa = el("div", "", aberta ? "▸" : "▾"); sa.style.fontSize = "22px"; sa.style.color = aberta ? "#b9acff" : "#8a8a9c";
     cab.appendChild(tt); cab.appendChild(sa);
     cab.addEventListener("click", () => { C.sec[chave] = !aberta; salvarC(); desenharC(); });
     card.appendChild(cab);
@@ -3475,15 +3487,17 @@ $("btnTesteModelo").addEventListener("click", async () => {
     // ---- prévia
     const tp = secao("previa", "Prévia (como o criativo fica parado)");
     const fm = el("div"); fm.style.display = "flex"; fm.style.marginBottom = "6px";
+    const botoesC = [];
     for (const [v, n] of [["h", "Vídeo horizontal"], ["v", "Vídeo vertical"]]) {
       const b = el("div", "ed-btn", n); b.style.marginRight = "6px"; b.style.width = "auto"; b.style.paddingLeft = "10px"; b.style.paddingRight = "10px";
       if (C.formato === v) { b.style.backgroundColor = "#4a3fa0"; }
-      b.addEventListener("click", () => { C.formato = v; ULTIMA_C = ""; desenharC(); agendarPreviaC(); });
+      botoesC.push([b, v]);
+      b.addEventListener("click", () => { trocarFormatoLeve(C, v, botoesC, "crMoldura", "crPrevia", null); agendarPreviaC(); });
       fm.appendChild(b);
     }
     const bg = el("div", "ed-btn", C.guias ? "Guias: ligadas" : "Guias: desligadas"); bg.style.width = "auto"; bg.style.paddingLeft = "10px"; bg.style.paddingRight = "10px";
     if (C.guias) bg.style.backgroundColor = "#4a3fa0";
-    bg.addEventListener("click", () => { C.guias = !C.guias; desenharC(); agendarPreviaC(); });
+    bg.addEventListener("click", () => { C.guias = !C.guias; bg.textContent = C.guias ? "Guias: ligadas" : "Guias: desligadas"; bg.style.backgroundColor = C.guias ? "#4a3fa0" : ""; agendarPreviaC(); });
     fm.appendChild(bg); tp.appendChild(fm);
     const vert = C.formato === "v";
     const mold = el("div"); mold.id = "crMoldura"; mold.style.position = "relative";
