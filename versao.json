@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.96",
-  "notas": "Virais: transcricao curta guardada nao conta; transcreve o podcast inteiro sozinho",
+  "versao": "1.0.97",
+  "notas": "Nova aba Virais separada da aba Vertical",
   "arquivos": {
-    "server.py": "43667a1d12a56b4d39583b88e354a8120d313164f9689961a60c8cb9fafe1ea7",
-    "painel_index.html": "60680a26791dd8c2caedffafac3a6fec26ee18425ff96b68dfef43e198cc4a5d",
-    "painel_main.js": "6ac3cc7efbb4c73a408efefad6fe94dea424829e0aea6f53eb4090bb3e7e55e0",
+    "server.py": "ee1d9648bad6091359d0fde2ea977f2cc06caee28c05658a91f743aec91f2d20",
+    "painel_index.html": "b212d8ec9dcfca62579cc4317b2b2279767fc41b5dfc70ad5df34feda49a89ce",
+    "painel_main.js": "5836ec0e5c8cb99bf1f2678bddd2e7b3e3d3b00b4e87968c598ce1aab2a3c8fa",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",

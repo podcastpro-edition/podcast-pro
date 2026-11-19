@@ -2376,7 +2376,7 @@ $("btnViral").addEventListener("click", () => semPressa(async () => {
 
 // --- Abas do painel ---------------------------------------------------------
 (function () {
-  const abas = ["Podcast", "Legendas", "Criativos", "Vertical", "Silencios", "Buscar", "Avancado"];
+  const abas = ["Podcast", "Legendas", "Criativos", "Vertical", "Virais", "Silencios", "Buscar", "Avancado"];
   const comTrecho = new Set([]);
   function abrir(nome) {
     abas.forEach((a) => {
