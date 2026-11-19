@@ -1971,51 +1971,102 @@ $("btnVertical").addEventListener("click", () => semPressa(async () => {
     const origem = await projeto.getActiveSequence();
     if (!origem) return mostrar("Nenhuma sequência ativa (deixe a PODCAST ativa).", true);
 
-    etapa = "ler os arquivos da sequência (deixe a PODCAST ativa)";
-    AUTO = null;
-    await garantirAudio(ppro, origem);
-    const wav = await wavDoPodcast(ppro, origem);
-    const cameras = {};
-    for (const v of camerasUsadas()) cameras[v] = await caminhoDaTrilha(ppro, origem, "V", parseInt(v.slice(1), 10) - 1);
+    // ---- 1. lê os cortes que JÁ estão na sequência (nada é reanalisado)
+    etapa = "ler os cortes da sequência (deixe a sequência do podcast já montada ativa)";
+    mostrar("Lendo os cortes que já estão na sequência...");
+    const sec = async (f) => { const t = await f(); return t && t.seconds !== undefined ? t.seconds : Number(t); };
+    const sobrepoe = (a, b) => b > INICIO + 0.05 && a < FIM - 0.05;
+    const lerFaixa = async (tipo, idx) => {
+      const tr = tipo === "V" ? await origem.getVideoTrack(idx) : await origem.getAudioTrack(idx);
+      const its = await tr.getTrackItems(1, false);
+      const lista = [];
+      for (const it of its) {
+        const ini = await sec(() => it.getStartTime()), fim = await sec(() => it.getEndTime());
+        if (!sobrepoe(ini, fim)) continue;
+        let des = false; try { des = !!(await it.isDisabled()); } catch (e) { des = false; }
+        let caminho = null;
+        try { const pi = await it.getProjectItem(); const cp = await ppro.ClipProjectItem.cast(pi); caminho = await cp.getMediaFilePath(); } catch (e) { caminho = null; }
+        lista.push({ ini, fim, entrada: await sec(() => it.getInPoint()), des, caminho });
+      }
+      lista.sort((a, b) => a.ini - b.ini);
+      return lista;
+    };
+    const camerasOrdem = camerasUsadas();
+    const videos = {}, cameras = {};
+    const nVseq = await origem.getVideoTrackCount();
+    for (const cam of camerasOrdem) {
+      const idx = parseInt(cam.slice(1), 10) - 1;
+      if (idx + 1 > nVseq) throw new Error("a sequência não tem a trilha " + cam);
+      const lista = await lerFaixa("V", idx);
+      if (!lista.length) throw new Error("a trilha " + cam + " não tem nada entre " + INICIO + " s e " + FIM + " s da sequência");
+      const comArq = lista.find((c) => c.caminho);
+      if (!comArq) throw new Error("não consegui ler o arquivo da trilha " + cam);
+      videos[cam] = lista; cameras[cam] = comArq.caminho;
+    }
+    const doItem = (cam, T) => { // trecho (item) da câmera que cobre o tempo T, ou o mais próximo
+      const l = videos[cam];
+      let m = l.find((c) => T >= c.ini - 0.001 && T <= c.fim + 0.001);
+      if (!m) m = l.reduce((x, y) => (Math.abs(y.ini - T) < Math.abs(x.ini - T) ? y : x));
+      return m;
+    };
+    const arquivoT = (cam, T) => { const m = doItem(cam, T); return m.entrada + (T - m.ini); }; // tempo dentro do arquivo
+    // pontos de corte = começos/fins dos clipes de todas as câmeras
+    let cortes = [INICIO, FIM];
+    for (const cam of camerasOrdem) for (const c of videos[cam]) { if (c.ini > INICIO + 0.03 && c.ini < FIM - 0.03) cortes.push(c.ini); if (c.fim > INICIO + 0.03 && c.fim < FIM - 0.03) cortes.push(c.fim); }
+    cortes.sort((a, b) => a - b);
+    cortes = cortes.filter((v, k) => k === 0 || v - cortes[k - 1] > 0.04);
+    const pecas = [];
+    let ultimaCam = camerasOrdem[0];
+    for (let k = 0; k + 1 < cortes.length; k++) {
+      const a = cortes[k], b = cortes[k + 1], meio = (a + b) / 2;
+      let camAtiva = null;
+      for (const cam of camerasOrdem) { if (videos[cam].some((c) => !c.des && meio >= c.ini && meio <= c.fim)) { camAtiva = cam; break; } }
+      if (!camAtiva) camAtiva = ultimaCam;
+      ultimaCam = camAtiva;
+      const arq = {};
+      for (const cam of camerasOrdem) arq[cam] = [arquivoT(cam, a + 0.001), arquivoT(cam, b - 0.001) + 0.001];
+      pecas.push({ a, b, t: a - INICIO, camera: camAtiva, arq });
+    }
+    if (!pecas.length) throw new Error("não achei cortes nesse trecho da sequência");
 
-    etapa = "calcular cortes e rostos";
-    const plano = await comRelogio("Calculando os cortes e procurando os rostos...\n(na primeira vez leva 1 a 2 minutos; repetindo com a mesma sequência é bem mais rápido; não mexa no Premiere)", () => chamar("/plano_vertical", {
-      path: wav, cameras,
-      pessoas: PODCAST.pessoas.map((p) => ({ nome: p.nome, canal: p.canal, camera: p.camera })),
-      geral: PODCAST.geral, inicio: INICIO, fim: FIM,
+    // ---- 2. só procura os rostos (o servidor guarda o resultado para repetir mais rápido)
+    etapa = "procurar os rostos";
+    const rr = await comRelogio("Procurando os rostos para enquadrar (" + pecas.length + " trechos)...\n(só isso é calculado; os cortes já feitos são reaproveitados)", () => chamar("/crops_vertical", {
+      cameras, geral: PODCAST.geral, pecas: pecas.map((p) => ({ arq: p.arq })),
     }));
-    const pecas = plano.pecas;
+    pecas.forEach((p, i) => { p.crops = rr.crops[i]; });
 
     etapa = "achar os arquivos no projeto";
     const itens = {};
-    for (const [nome, caminho] of Object.entries({ ...cameras, WAV: wav })) {
+    const garantirClipe = async (nome, caminho) => {
+      if (itens[nome]) return itens[nome];
       let achado = await acharClipe(ppro, projeto, caminho);
       if (!achado) { await projeto.importFiles([caminho]); await dormir(1500); achado = await acharClipe(ppro, projeto, caminho); }
       if (!achado) throw new Error("não achei " + nome + " no projeto");
       itens[nome] = achado;
-    }
+      return achado;
+    };
+    for (const [nome, caminho] of Object.entries(cameras)) await garantirClipe(nome, caminho);
 
     const hora = new Date();
     const nome = "VERTICAL " + String(hora.getHours()).padStart(2, "0") + "h" + String(hora.getMinutes()).padStart(2, "0");
     let sequencia = null, editor = null;
     const usados = new Set();
-    const camerasOrdem = Object.keys(cameras); // V1, V2, V3
     const trilhas = {};
     const totalPecas = camerasOrdem.length * pecas.length;
     let feitas = 0;
-    // cada câmera fica na sua própria trilha (V1, V2, V3), cortada nos mesmos pontos;
-    // só a câmera escolhida em cada trecho fica ativa, as outras ficam DESATIVADAS (nada é apagado)
+    // cada câmera fica na sua própria trilha (V1, V2, V3), cortada nos mesmos pontos da sequência original;
+    // só a câmera ativa em cada trecho fica ligada, as outras ficam DESATIVADAS (nada é apagado)
     for (let ci = 0; ci < camerasOrdem.length; ci++) {
       const cam = camerasOrdem[ci];
       const alvo = itens[cam];
-      const atraso = plano.atraso[cam].valor;
       for (let i = 0; i < pecas.length; i++) {
         const p = pecas[i];
         feitas++;
         mostrar("Montando o vídeo vertical (" + cam + "): peça " + feitas + " de " + totalPecas + "\nNão mexa no Premiere.");
         etapa = "definir entrada/saída da peça " + feitas + " (" + cam + ")";
-        const tIni = await ppro.TickTime.createWithSeconds(p.a + atraso);
-        const tFim = await ppro.TickTime.createWithSeconds(p.b + atraso);
+        const tIni = await ppro.TickTime.createWithSeconds(p.arq[cam][0]);
+        const tFim = await ppro.TickTime.createWithSeconds(p.arq[cam][1]);
         await executar(projeto, "Vertical: entrada e saída", () => alvo.clip.createSetInOutPointsAction(tIni, tFim));
         usados.add(cam);
         if (!sequencia) {
@@ -2046,7 +2097,7 @@ $("btnVertical").addEventListener("click", () => semPressa(async () => {
       trilhas[cam] = q;
     }
 
-    // desativa os pedaços das câmeras que não são as escolhidas
+    // desativa os pedaços das câmeras que não são as ativas
     etapa = "desativar os pedaços não usados";
     for (const cam of camerasOrdem) {
       const q = trilhas[cam] || [];
@@ -2061,20 +2112,37 @@ $("btnVertical").addEventListener("click", () => semPressa(async () => {
       }
     }
 
-    // áudio dos microfones (WAV) contínuo por baixo, depois das 3 trilhas de áudio das câmeras
-    etapa = "colocar o áudio dos microfones";
-    const primeiraTrilhaWav = camerasOrdem.length;
-    const wIni = await ppro.TickTime.createWithSeconds(INICIO);
-    const wFim = await ppro.TickTime.createWithSeconds(FIM);
-    await executar(projeto, "Vertical: entrada e saída (áudio)", () => itens.WAV.clip.createSetInOutPointsAction(wIni, wFim));
-    const zero = await ppro.TickTime.createWithSeconds(0);
-    await executar(projeto, "Vertical: colocar áudio", () => editor.createOverwriteItemAction(itens.WAV.item, zero, 0, primeiraTrilhaWav));
+    // áudio: copia, trilha por trilha, o que já está na sequência original (mesmos cortes), depois das trilhas de áudio das câmeras
+    etapa = "copiar o áudio da sequência";
+    const baseA = camerasOrdem.length;
+    const mudas = [];
+    const arquivosCamera = new Set(Object.values(cameras));
+    const nAseq = await origem.getAudioTrackCount();
+    let feitasA = 0;
+    for (let ai = 0; ai < nAseq; ai++) {
+      const lista = (await lerFaixa("A", ai)).filter((c) => c.caminho && !arquivosCamera.has(c.caminho));
+      if (!lista.length) continue;
+      let muda = false;
+      try { const trO = await origem.getAudioTrack(ai); if (typeof trO.isMuted === "function") muda = !!(await trO.isMuted()); } catch (e) { muda = false; }
+      if (muda) { mudas.push(baseA + ai); continue; } // trilha silenciada na original: não copia
+      for (const c of lista) {
+        if (c.des) continue;
+        const a = Math.max(c.ini, INICIO), b = Math.min(c.fim, FIM);
+        if (b - a < 0.04) continue;
+        feitasA++;
+        mostrar("Copiando o áudio (A" + (ai + 1) + "): trecho " + feitasA + "\nNão mexa no Premiere.");
+        const ach = await garantirClipe("A:" + c.caminho, c.caminho);
+        const fIni = await ppro.TickTime.createWithSeconds(c.entrada + (a - c.ini));
+        const fFim = await ppro.TickTime.createWithSeconds(c.entrada + (b - c.ini));
+        await executar(projeto, "Vertical: entrada e saída (áudio)", () => ach.clip.createSetInOutPointsAction(fIni, fFim));
+        const tpos = await ppro.TickTime.createWithSeconds(a - INICIO);
+        await executar(projeto, "Vertical: colocar áudio", () => editor.createOverwriteItemAction(ach.item, tpos, 0, baseA + ai));
+      }
+    }
     for (const c of usados) await executar(projeto, "Vertical: limpar", () => itens[c].clip.createClearInOutPointsAction());
-    await executar(projeto, "Vertical: limpar", () => itens.WAV.clip.createClearInOutPointsAction());
-    try {
-      const vivos = new Set(PODCAST.pessoas.map((p) => primeiraTrilhaWav + p.canal));
-      const total = await sequencia.getAudioTrackCount();
-      for (let i = 0; i < total; i++) { if (vivos.has(i)) continue; await (await sequencia.getAudioTrack(i)).setMute(true); }
+    for (const k of Object.keys(itens)) if (k.indexOf("A:") === 0) await executar(projeto, "Vertical: limpar", () => itens[k].clip.createClearInOutPointsAction());
+    try { // silencia o áudio das câmeras (o áudio bom vem dos microfones)
+      for (let i = 0; i < baseA; i++) await (await sequencia.getAudioTrack(i)).setMute(true);
     } catch (e) { avisos.push("não consegui silenciar trilhas: " + (e && e.message ? e.message : e)); }
 
     // enquadramento: posição e escala de cada pedaço, em todas as câmeras

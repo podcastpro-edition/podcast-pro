@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.90"
+VERSAO = "1.0.91"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -2724,6 +2724,44 @@ avaliar_audios = com_cache(avaliar_audios)
 plano_podcast = com_cache(plano_podcast)
 
 
+def crops_vertical(cameras, geral, pecas):
+    """Só procura os rostos. pecas: [{"arq": {"V1": [ini, fim], ...}}] (tempos DENTRO de cada arquivo de vídeo).
+    Os cortes já existem na sequência; aqui se decide apenas o enquadramento vertical de cada câmera."""
+    import numpy as np
+    ultimo = {}
+    saida = []
+    for p in pecas:
+        crops = {}
+        for cam in cameras:
+            a, b = p["arq"][cam]
+            W, H, amostras = rostos_no_trecho(cameras[cam], a, b)
+            escolhidos = []
+            for _, faces in amostras:
+                if not faces:
+                    continue
+                if cam == geral and len(faces) > 1:
+                    escolhidos.append((float(np.mean([f[0] for f in faces])), float(np.mean([f[1] for f in faces])),
+                                       float(max(f[3] for f in faces))))
+                else:
+                    f = max(faces, key=lambda f: f[2] * f[3])
+                    escolhidos.append((f[0], f[1], f[3]))
+            if escolhidos:
+                cx = float(np.median([e[0] for e in escolhidos]))
+                cy = float(np.median([e[1] for e in escolhidos]))
+                fh = float(np.median([e[2] for e in escolhidos]))
+                n = len(escolhidos)
+                ultimo[cam] = (cx, cy, fh)
+            else:
+                cx, cy, fh = ultimo.get(cam, (0.5, 0.4, 0.2))
+                n = 0
+            crops[cam] = {"largura": W, "altura": H, "cx": cx, "cy": cy, "fh": fh, "rostos": n}
+        saida.append(crops)
+    return {"crops": saida}
+
+
+crops_vertical = com_cache(crops_vertical)
+
+
 def plano_vertical(wav, cameras, pessoas, geral, inicio, fim, duracao_minima=2.0):
     import numpy as np
     plano = plano_podcast(wav, cameras, pessoas, geral, 0.5, 0.25, duracao_minima, False)
@@ -3233,6 +3271,11 @@ class Handler(BaseHTTPRequestHandler):
                     os.path.normpath(pasta), bool(corpo.get("enxuto", False)),
                     corpo.get("semente", 1), corpo.get("cache"), corpo.get("prefixo", ""))})
 
+            if self.path == "/crops_vertical":
+                for o in corpo["cameras"].values():
+                    if not os.path.isfile(o):
+                        return self._responder({"erro": f"arquivo não encontrado: {o}"}, 400)
+                return self._responder(crops_vertical(corpo["cameras"], corpo.get("geral", "V1"), corpo["pecas"]))
             if self.path == "/plano_vertical":
                 for o in corpo["cameras"].values():
                     if not os.path.isfile(o):
