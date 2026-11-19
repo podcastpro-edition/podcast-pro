@@ -1277,8 +1277,11 @@ function popup(titulo, texto, botoes) {
     d.addEventListener("click", () => { if (!b.fica) $("popup").style.display = "none"; if (b.acao) b.acao(); });
     area.appendChild(d);
   }
+  // a pergunta aparece SEMPRE logo abaixo da barra do topo, em qualquer aba (antes ficava escondida na aba Podcast)
+  try { const c = $("carregando"), pp = $("popup"); if (c && c.parentNode && pp) c.parentNode.insertBefore(pp, c.nextSibling); } catch (e) { /* segue */ }
   $("popup").style.display = "block";
-  try { window.scrollTo(0, 0); } catch (e) { /* segue */ }
+  try { mostrar("Preciso da sua resposta: veja a pergunta aqui em cima ↑"); } catch (e) { /* segue */ }
+  try { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; } catch (e) { /* segue */ }
 }
 
 let AJUSTE_PEDIDO = false; // true quando o painel abriu esta seção no meio de uma montagem
