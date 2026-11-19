@@ -958,6 +958,18 @@ async function recorteDaTrilha(ppro, sequencia, trilhaIdx) {
 // "Automático": olha todas as trilhas de áudio da sequência, descarta o que é ambiente de câmera,
 // efeitos e trilhas vazias, e escolhe os microfones de cada pessoa (ou a trilha master).
 // Nada é apagado: o que não for usado fica só silenciado na sequência nova.
+// Lembra qual áudio foi escolhido da última vez (para a mesma sequência/pessoas), em qualquer aba
+let MEMORIA_AUDIO = null;
+const assinaturaAudio = (faixas, alvo) => JSON.stringify([faixas.map((f) => [f.trilha, f.path]), alvo.map((p) => [p.nome, p.camera])]);
+function lembrarAudio(sig, auto) {
+  MEMORIA_AUDIO = { sig, auto };
+  try { localStorage.setItem("ppMemoriaAudio", JSON.stringify(MEMORIA_AUDIO)); } catch (e) { /* sem armazenamento */ }
+}
+function lerMemoriaAudio(sig) {
+  let m = MEMORIA_AUDIO;
+  if (!m) { try { m = JSON.parse(localStorage.getItem("ppMemoriaAudio") || "null"); } catch (e) { m = null; } }
+  return m && m.sig === sig ? m.auto : null;
+}
 async function garantirAudio(ppro, sequencia) {
   if (AUTO) return;
   const alvo = lerPessoas().pessoas.filter((p) => p.auto);
@@ -968,6 +980,13 @@ async function garantirAudio(ppro, sequencia) {
   for (let i = 0; i < nA; i++) {
     mostrar("Lendo as trilhas de áudio da sequência: " + (i + 1) + " de " + nA + "...");
     try { faixas.push({ trilha: i, path: await caminhoDaTrilha(ppro, sequencia, "A", i) }); } catch (e) { /* trilha vazia */ }
+  }
+  const sigAudio = assinaturaAudio(faixas, alvo);
+  const jaFeito = lerMemoriaAudio(sigAudio);
+  if (jaFeito) { // já escolhi o áudio desta sequência antes: usa o mesmo, sem perguntar e sem reanalisar
+    AUTO = jaFeito;
+    mostrar("Usando o áudio já escolhido antes para esta sequência.");
+    return;
   }
   const cameras = {};
   for (const v of camerasUsadas()) cameras[v] = await caminhoDaTrilha(ppro, sequencia, "V", parseInt(v.slice(1), 10) - 1);
@@ -986,6 +1005,7 @@ async function garantirAudio(ppro, sequencia) {
   const resumo = r.faixas.filter((f) => f.tipo !== "vazia").map((f) => rot(f.trilha) + ": " + f.tipo).join(", ");
   if (r.modo === "voz_unica") {
     AUTO = { vozUnica: true, trilha: r.escolha.trilha };
+    lembrarAudio(sigAudio, AUTO);
     mostrar("Áudio escolhido: " + rot(r.escolha.trilha) + " (trilha única).\nTrilhas analisadas: " + resumo);
     return;
   }
@@ -1012,11 +1032,13 @@ async function garantirAudio(ppro, sequencia) {
     }
     if (usouMaster) {
       AUTO = { vozUnica: true, trilha: r.master };
+      lembrarAudio(sigAudio, AUTO);
       mostrar("Áudio escolhido: " + rot(r.master) + " (master).");
       return;
     }
   }
   AUTO = { mapa };
+  lembrarAudio(sigAudio, AUTO);
   mostrar("Microfones escolhidos: " + Object.entries(mapa).map(([n, tr]) => n + " = " + rot(tr)).join(", ") + "\nTrilhas analisadas: " + resumo);
 }
 
