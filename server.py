@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.111"
+VERSAO = "1.0.112"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -2727,6 +2727,8 @@ def rostos_no_trecho(caminho, ini, fim, passo=0.5, largura_analise=640):
     tam = aw * ah
     n = len(bruto) // tam
     detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    if detector.empty():
+        raise RuntimeError("Não achei o arquivo do detector de rostos do OpenCV. Rode o INSTALAR.bat de novo (pasta C:\\PODCAST_PRO).")
     saida = []
     for i in range(n):
         quadro = np.frombuffer(bruto[i * tam:(i + 1) * tam], dtype=np.uint8).reshape(ah, aw)
@@ -3494,14 +3496,54 @@ def aplicar_atualizacao():
             return {"ok": False, "erro": "O programa novo tem erro e não foi instalado: " + str(e)}
     pasta_bkp = os.path.join(_RAIZ, "backup")
     os.makedirs(pasta_bkp, exist_ok=True)
-    for nome, dados in novos.items():
+    import time as _t
+    criticos = ("server.py", "painel_index.html", "painel_main.js")
+    trocados, pulados = [], []
+
+    def trocar(nome, dados):
         dest = destinos[nome]
         if os.path.exists(dest):
             shutil.copy2(dest, os.path.join(pasta_bkp, nome + ".bak"))
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with open(dest + ".novo", "wb") as f:
             f.write(dados)
-        os.replace(dest + ".novo", dest)
+        ultimo = None
+        for _ in range(5):  # o Windows às vezes segura o arquivo por um instante (ex.: imagem aberta no painel)
+            try:
+                os.replace(dest + ".novo", dest)
+                return
+            except PermissionError as e:
+                ultimo = e
+                _t.sleep(0.4)
+        try:
+            os.remove(dest + ".novo")
+        except OSError:
+            pass
+        raise ultimo
+
+    # primeiro os arquivos secundários (imagens, modelo): se um estiver preso, só é pulado
+    for nome, dados in novos.items():
+        if nome in criticos:
+            continue
+        try:
+            trocar(nome, dados)
+            trocados.append(nome)
+        except Exception:
+            pulados.append(nome)
+    # depois os essenciais: se algum falhar, devolve os que já trocou (nunca fica metade nova, metade velha)
+    try:
+        for nome in criticos:
+            if nome in novos:
+                trocar(nome, novos[nome])
+                trocados.append(nome)
+    except Exception as e:
+        for nome in trocados:
+            if nome in criticos:
+                try:
+                    shutil.copy2(os.path.join(pasta_bkp, nome + ".bak"), destinos[nome])
+                except Exception:
+                    pass
+        return {"ok": False, "erro": "Não consegui trocar os arquivos (" + str(e) + "). Nada foi alterado. Feche outros programas que usem a pasta C:\\PODCAST_PRO e tente de novo."}
     return {"ok": True, "disponivel": True, "nova": info.get("versao")}
 
 

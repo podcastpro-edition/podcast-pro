@@ -2678,6 +2678,10 @@ async function corrigirBuracosSeq(ppro, projeto, seq) { // tapa os trechos sem c
       if (c.ini - fimCob > 0.02) buracos.push({ g0: fimCob, g1: c.ini, ativo: camAnt || c.cam });
       if (c.fim >= fimCob) { fimCob = c.fim; camAnt = c.cam; }
     }
+    // trecho final em que todas as câmeras estão desativadas (até onde ainda existe vídeo na sequência)
+    let fimVideo = 0;
+    for (const cam of cams) for (const c of trilhas[cam]) fimVideo = Math.max(fimVideo, c.fim);
+    if (fimVideo - fimCob > 0.02 && camAnt) buracos.push({ g0: fimCob, g1: fimVideo, ativo: camAnt });
     if (!buracos.length) return { n: 0, total: 0, texto: "Não achei buracos: sempre tem uma câmera ligada do começo ao fim." };
     const total = buracos.reduce((s, b) => s + (b.g1 - b.g0), 0);
     if (buracos.length > 150) throw new Error("achei " + buracos.length + " buracos; é coisa demais para corrigir sozinho. Refaça a montagem.");
@@ -2690,8 +2694,6 @@ async function corrigirBuracosSeq(ppro, projeto, seq) { // tapa os trechos sem c
       itens[cam] = a;
     }
     const editor = await ppro.SequenceEditor.getEditor(seq);
-    // guarda o que já existia em cada trilha, para depois saber quais clipes são os NOVOS (só mexo nesses)
-    const chave = (ini, fim) => ini.toFixed(2) + "|" + fim.toFixed(2);
     const lerTrilhaItens = async (ci) => {
       const its = await (await seq.getVideoTrack(parseInt(cams[ci].slice(1), 10) - 1)).getTrackItems(1, false);
       const r = [];
@@ -2701,8 +2703,6 @@ async function corrigirBuracosSeq(ppro, projeto, seq) { // tapa os trechos sem c
       }
       return r;
     };
-    const antes = [];
-    for (let ci = 0; ci < cams.length; ci++) antes.push(new Set((await lerTrilhaItens(ci)).map((x) => chave(x.ini, x.fim))));
     let n = 0;
     for (const b of buracos) {
       n++;
@@ -2730,7 +2730,8 @@ async function corrigirBuracosSeq(ppro, projeto, seq) { // tapa os trechos sem c
     const novos = [];
     for (let ci = 0; ci < cams.length; ci++) {
       const atual = await lerTrilhaItens(ci);
-      novos.push(atual.filter((x) => !antes[ci].has(chave(x.ini, x.fim))).map((x) => ({ ...x, cam: cams[ci] })));
+      // os clipes NOVOS são os que começam exatamente no início de um buraco (o overwrite os colocou ali)
+      novos.push(atual.filter((x) => buracos.some((b) => Math.abs(x.ini - b.g0) < 0.06)).map((x) => ({ ...x, cam: cams[ci] })));
     }
     const doBuraco = (x) => { let m = null, d = 1e9; for (const b of buracos) { const dd = Math.abs(x.ini - b.g0); if (dd < d) { d = dd; m = b; } } return d < 0.15 ? m : null; };
     const alvos = [];
