@@ -2917,6 +2917,26 @@ async function esperarServidor() {
   }
   return false;
 }
+async function ytMostrarEstado() {
+  try {
+    const r = await (await fetch(SERVICO + "/youtube/estado", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).json();
+    if (r.ref) {
+      const d = new Date(r.ref.quando * 1000);
+      $("ytEstado").textContent = "Referência ativa: " + r.ref.n + " Shorts analisados em " + d.toLocaleDateString("pt-BR") +
+        ". Duração típica dos que bombaram: " + Math.round(r.ref.p25) + " a " + Math.round(r.ref.p75) + " s.";
+    } else if (r.chave) $("ytEstado").textContent = "Chave salva. Clique em Atualizar para buscar a referência.";
+  } catch (e) { /* servidor ainda subindo */ }
+}
+$("btnYt").addEventListener("click", async () => {
+  globalMostrar("Buscando Shorts no YouTube (uns 20 segundos)...");
+  try {
+    const r = await chamar("/youtube/atualizar", { chave: $("ytChave").value.trim() });
+    $("ytChave").value = "";
+    await ytMostrarEstado();
+    globalMostrar("Pronto! Analisei " + r.ref.n + " Shorts. Os próximos 'Procurar virais' já usam isso.");
+  } catch (e) { globalMostrar(String(e.message || e), true); }
+});
+ytMostrarEstado();
 $("btnBuscarAtual").addEventListener("click", async () => {
   const mostrar = (t, e) => { window.mostrarGlobal ? 0 : 0; $("msgAtual").textContent = t; $("msgAtual").style.color = e ? "#ff8a80" : "#9a9a9a"; globalMostrar(t, e); };
   mostrar("Procurando atualização online...");

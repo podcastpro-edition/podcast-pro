@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.112"
+VERSAO = "1.0.113"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -2984,6 +2984,96 @@ def buscar_trechos(wav, consulta, contexto):
     return {"passagens": saida, "frases": len(frases),
             "duracao": round(sum(p["fim"] - p["ini"] for p in saida), 1)}
 
+# ------------------------------------------------- referência: Shorts do YouTube
+_ARQ_YT = os.path.join(_AQUI, "referencia_youtube.json")
+_TEMAS_YT = ["podcast corte", "podcast cortes viral", "podcast reflexão", "podcast testemunho", "podcast história de vida",
+             "podcast entrevista momento", "podcast polêmica", "podcast conselho"]
+
+
+def _yt_get(rota, params):
+    import urllib.request, urllib.parse, urllib.error
+    url = "https://www.googleapis.com/youtube/v3/" + rota + "?" + urllib.parse.urlencode(params)
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "podcast-pro"}), timeout=30) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read().decode("utf-8"))["error"]["message"]
+        except Exception:
+            msg = str(e)
+        raise RuntimeError("O YouTube recusou: " + msg)
+
+
+def _dur_iso(d):
+    m = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$", d or "")
+    if not m:
+        return 0
+    h, mi, se = (int(x or 0) for x in m.groups())
+    return h * 3600 + mi * 60 + se
+
+
+def atualizar_referencia_youtube(chave):
+    """Busca Shorts em português mais vistos dos últimos meses e guarda o que eles têm em comum."""
+    import time, datetime
+    depois = (datetime.datetime.utcnow() - datetime.timedelta(days=180)).strftime("%Y-%m-%dT00:00:00Z")
+    ids = []
+    for tema in _TEMAS_YT:
+        r = _yt_get("search", {"part": "id", "q": tema, "type": "video", "videoDuration": "short", "order": "viewCount",
+                               "regionCode": "BR", "relevanceLanguage": "pt", "publishedAfter": depois,
+                               "maxResults": 50, "key": chave})
+        ids += [x["id"]["videoId"] for x in r.get("items", []) if x.get("id", {}).get("videoId")]
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        raise RuntimeError("O YouTube não devolveu nenhum vídeo.")
+    vids = []
+    for k in range(0, len(ids), 50):
+        r = _yt_get("videos", {"part": "snippet,statistics,contentDetails", "id": ",".join(ids[k:k + 50]), "key": chave})
+        for it in r.get("items", []):
+            st = it.get("statistics", {})
+            d = _dur_iso(it.get("contentDetails", {}).get("duration"))
+            v = int(st.get("viewCount", 0) or 0)
+            if 10 <= d <= 180 and v > 0:
+                vids.append({"d": d, "v": v, "eng": (int(st.get("likeCount", 0) or 0) + int(st.get("commentCount", 0) or 0)) / v,
+                             "t": it["snippet"].get("title", "")})
+    if len(vids) < 20:
+        raise RuntimeError("Poucos vídeos encontrados (%d). Tente de novo mais tarde." % len(vids))
+    vids.sort(key=lambda x: -x["v"])
+    topo = vids[:max(10, len(vids) // 4)]
+    durs = sorted(x["d"] for x in topo)
+    # peso por duração (faixas de 10 s)
+    faixas = {}
+    for x in topo:
+        b = int(x["d"] // 10) * 10
+        faixas[b] = faixas.get(b, 0) + 1
+    # palavras de abertura do título que aparecem mais nos vídeos de topo do que no resto
+    def aberturas(lista):
+        c = {}
+        for x in lista:
+            toks = _norm(x["t"]).split()
+            for g in {" ".join(toks[:1]), " ".join(toks[:2])}:
+                if g:
+                    c[g] = c.get(g, 0) + 1
+        return c
+    ct, cr = aberturas(topo), aberturas(vids[len(topo):])
+    ganchos = [g for g, n in sorted(ct.items(), key=lambda kv: -kv[1])
+               if n >= 3 and n / len(topo) > 1.3 * (cr.get(g, 0) / max(1, len(vids) - len(topo))) and len(g) > 3][:15]
+    ref = {"quando": int(time.time()), "n": len(vids), "mediana": durs[len(durs) // 2],
+           "p25": durs[len(durs) // 4], "p75": durs[(len(durs) * 3) // 4],
+           "faixas": {str(k): v for k, v in sorted(faixas.items())}, "ganchos": ganchos,
+           "engajamento_topo": round(sum(x["eng"] for x in topo) / len(topo), 4)}
+    with open(_ARQ_YT, "w", encoding="utf-8") as f:
+        json.dump(ref, f, ensure_ascii=False, indent=1)
+    return ref
+
+
+def referencia_youtube():
+    try:
+        with open(_ARQ_YT, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
 _GANCHOS = ["voce sabia", "imagina", "ninguem", "nunca", "segredo", "a verdade", "descobri", "percebi", "de repente",
             "foi quando", "ate que", "nao acredito", "o problema", "o maior erro", "por que", "pare de", "cuidado",
             "sabe o que", "eu achava", "eu pensava", "tudo mudou", "a partir daquele", "naquele dia", "eu nao aguentava"]
@@ -3019,6 +3109,7 @@ def trechos_virais(wav, dmin=20.0, dmax=60.0, quantidade=8, recorte=None):
     if atual:
         frases.append(atual)
     norm_f = [_norm(" ".join(x["w"] for x in fr)) for fr in frases]
+    ref_yt = referencia_youtube()
     cands = []
     n = len(frases)
     for i in range(n):
@@ -3059,6 +3150,11 @@ def trechos_virais(wav, dmin=20.0, dmax=60.0, quantidade=8, recorte=None):
                 nota -= 1.5
             centro = (dmin + dmax) / 2
             nota += 1.0 - abs(dur - centro) / max(1.0, (dmax - dmin) / 2)
+            if ref_yt:
+                if ref_yt["p25"] <= dur <= ref_yt["p75"]:
+                    nota += 1.5; motivos.append("duração igual à dos Shorts que bombaram")
+                if any(prim.startswith(g) for g in ref_yt.get("ganchos", [])):
+                    nota += 1.0; motivos.append("abertura parecida com Shorts de sucesso")
             cands.append((nota, ini, fim, i, j, motivos))
     cands.sort(key=lambda c: -c[0])
     escolhidos = []
@@ -3077,7 +3173,7 @@ def trechos_virais(wav, dmin=20.0, dmax=60.0, quantidade=8, recorte=None):
         saida.append({"ini": round(ini, 2), "fim": round(fim, 2), "nota": int(max(1, min(99, round(nota / 12.0 * 100)))),
                       "motivos": vistos, "texto": (txt[:200] + "...") if len(txt) > 200 else txt})
     saida.sort(key=lambda x: -x["nota"])
-    return {"trechos": saida}
+    return {"trechos": saida, "referenciaYoutube": bool(ref_yt)}
 
 
 # --------------------------------------------------------------------- HTTP
@@ -3181,6 +3277,24 @@ class Handler(BaseHTTPRequestHandler):
                     import threading
                     threading.Timer(0.8, _reiniciar_servidor).start()
                 return
+            if self.path == "/youtube/atualizar":
+                try:
+                    chave = (corpo.get("chave") or "").strip()
+                    arq_chave = os.path.join(_AQUI, "youtube_chave.txt")
+                    if chave:
+                        with open(arq_chave, "w", encoding="utf-8") as f:
+                            f.write(chave)
+                    elif os.path.isfile(arq_chave):
+                        with open(arq_chave, encoding="utf-8") as f:
+                            chave = f.read().strip()
+                    if not chave:
+                        return self._responder({"erro": "Cole a chave do YouTube primeiro."}, 400)
+                    return self._responder({"ok": True, "ref": atualizar_referencia_youtube(chave)})
+                except Exception as e:
+                    return self._responder({"erro": str(e)}, 400)
+            if self.path == "/youtube/estado":
+                return self._responder({"ref": referencia_youtube(),
+                                        "chave": os.path.isfile(os.path.join(_AQUI, "youtube_chave.txt"))})
             if self.path == "/legendas_overlay":
                 import time
                 pasta_ov = os.path.join(_RAIZ, "cache", "overlays")
