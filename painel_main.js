@@ -2770,6 +2770,13 @@ $("btnBuracos").addEventListener("click", () => semPressa(async () => {
   }
 }));
 
+// menu "Avançado" da aba Silêncios: abre e fecha os ajustes
+$("menuSilAv").addEventListener("click", () => {
+  const corpo = $("corpoSilAv"), aberto = corpo.style.display !== "none";
+  corpo.style.display = aberto ? "none" : "block";
+  $("setaSilAv").textContent = aberto ? "▸" : "▾";
+});
+
 // --- Abas do painel ---------------------------------------------------------
 (function () {
   const abas = ["Podcast", "Legendas", "Criativos", "Vertical", "Virais", "Silencios", "Buscar", "Avancado"];
