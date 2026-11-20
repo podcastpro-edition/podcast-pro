@@ -2777,6 +2777,13 @@ $("menuSilAv").addEventListener("click", () => {
   $("setaSilAv").textContent = aberto ? "▸" : "▾";
 });
 
+// menu "Avançado" da aba Avançado: mídia, legendas simples, transcrição e teste ficam recolhidos
+$("menuAvTec").addEventListener("click", () => {
+  const corpo = $("corpoAvTec"), aberto = corpo.style.display !== "none";
+  corpo.style.display = aberto ? "none" : "block";
+  $("setaAvTec").textContent = aberto ? "▸" : "▾";
+});
+
 // --- Abas do painel ---------------------------------------------------------
 (function () {
   const abas = ["Podcast", "Legendas", "Criativos", "Vertical", "Virais", "Silencios", "Buscar", "Avancado"];
