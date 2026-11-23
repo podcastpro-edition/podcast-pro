@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.118"
+VERSAO = "1.0.119"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -683,6 +683,16 @@ def com_cache(f):
     return g
 
 
+def _info_audio(caminho):
+    """Lista de fluxos de áudio do arquivo: [canais do fluxo 0, canais do fluxo 1, ...]."""
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=channels",
+                            "-of", "csv=p=0", caminho], capture_output=True, text=True, timeout=60)
+        return [int(x) for x in r.stdout.split() if x.strip().isdigit()]
+    except Exception:
+        return []
+
+
 def avaliar_audios(faixas, cameras, pessoas, recorte=None):
     """faixas: [{trilha, path}] (uma por trilha de áudio da sequência, 0 = A1).
     cameras: {"V1": caminho}. pessoas: [{nome, camera}].
@@ -709,6 +719,7 @@ def avaliar_audios(faixas, cameras, pessoas, recorte=None):
         lista.append(f["trilha"])
 
     info, envs = [], {}
+    canais_usados = set()
     for f in faixas:
         t = f["trilha"]
         item = {"trilha": t, "path": f["path"], "canal": canal_de[t]}
@@ -734,10 +745,33 @@ def avaliar_audios(faixas, cameras, pessoas, recorte=None):
             if float(np.percentile(e_try, 95)) >= -50:
                 e, item["canal"] = e_try, cand
                 break
+        item["arquivo"] = os.path.basename(f["path"])
+        if e is None or float(np.percentile(e, 95)) < -50:
+            # as escolhidas estão mudas: confere todos os canais do arquivo e usa o mais forte que ainda não foi usado
+            fluxos = _info_audio(f["path"])
+            item["fluxos"] = fluxos
+            nch = fluxos[0] if fluxos else 0
+            niveis = {}
+            for c in range(min(nch, 32)):
+                try:
+                    ec = envelope_db(ler_canal(f["path"], c, 8000, t0, min(120.0, dur_an)), 8000, 0.1)
+                    niveis[c] = float(np.percentile(ec, 95))
+                except Exception:
+                    pass
+            item["niveis_canais"] = {str(c + 1): round(v, 0) for c, v in niveis.items()}
+            livres = [c for c, v in sorted(niveis.items(), key=lambda kv: -kv[1]) if v > -50 and c not in canais_usados]
+            if livres:
+                c = livres[0]
+                try:
+                    e = envelope_db(ler_canal(f["path"], c, 8000, t0, dur_an), 8000, 0.1)
+                    item["canal"] = c
+                except Exception:
+                    e = None
         if e is None:
             item["tipo"] = "vazia"
             info.append(item)
             continue
+        canais_usados.add(item.get("canal"))
         chao = float(np.percentile(e, 10))
         topo = float(np.percentile(e, 95))
         limiar = min(chao + 12, topo - 12)  # fala contínua (sem pausas) também conta como fala
