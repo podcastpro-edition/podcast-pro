@@ -900,6 +900,7 @@ async function wavDoPodcast(ppro, sequencia) {
 // Sem isso, se você apagar trilhas da sequência, a contagem por posição desloca e o programa
 // pode ler um canal que você já tinha tirado.
 let CANAL_REAL = {};
+let CANAIS_SRV = {}; // canal que o programa local realmente conseguiu ler em cada trilha (vale mais que o nome do clipe)
 async function nomeDoItem(it) {
   try { if (typeof it.getName === "function") { const n = await it.getName(); if (n) return String(n); } } catch (e) { /* tenta o outro */ }
   try { const pi = await it.getProjectItem(); if (pi && pi.name) return String(pi.name); } catch (e) { /* sem nome */ }
@@ -928,6 +929,7 @@ async function descobrirCanaisReais(ppro, sequencia) {
       else resumo.push("não consegui ler o número do canal (nomes: " + lista.map((x) => x.nome || "?").join(", ") + "); uso a ordem das trilhas");
     }
   }
+  for (const k of Object.keys(CANAIS_SRV)) CANAL_REAL[k] = CANAIS_SRV[k];
   return resumo;
 }
 
@@ -1002,6 +1004,7 @@ async function recorteDaTrilha(ppro, sequencia, trilhaIdx) {
 let MEMORIA_AUDIO = null;
 const assinaturaAudio = (faixas, alvo) => JSON.stringify([faixas.map((f) => [f.trilha, f.path, f.canal]), alvo.map((p) => [p.nome, p.camera])]);
 function lembrarAudio(sig, auto) {
+  auto.canais = CANAIS_SRV;
   MEMORIA_AUDIO = { sig, auto };
   try { localStorage.setItem("ppMemoriaAudio", JSON.stringify(MEMORIA_AUDIO)); } catch (e) { /* sem armazenamento */ }
 }
@@ -1029,6 +1032,7 @@ async function garantirAudio(ppro, sequencia) {
   const jaFeito = lerMemoriaAudio(sigAudio);
   if (jaFeito) { // já escolhi o áudio desta sequência antes: usa o mesmo, sem perguntar e sem reanalisar
     AUTO = jaFeito;
+    CANAIS_SRV = jaFeito.canais || {};
     mostrar("Usando o áudio já escolhido antes para esta sequência.");
     return;
   }
@@ -1042,6 +1046,8 @@ async function garantirAudio(ppro, sequencia) {
   const recorte = palpite0 ? await recorteDaTrilha(ppro, sequencia, palpite0.trilha) : null;
   const r0 = await comRelogio("Analisando as trilhas de áudio (" + faixas.length + " trilhas)...\nSe já analisei esta sequência antes, é rápido.", () => chamar("/avaliar_audios", { faixas, cameras, recorte, pessoas: alvo.map((p) => ({ nome: p.nome, camera: p.camera })) }));
   const r = r0;
+  CANAIS_SRV = {};
+  for (const f of r.faixas || []) if (f.tipo !== "vazia" && f.tipo !== "camera" && f.canal !== undefined) CANAIS_SRV[f.trilha] = f.canal;
   const rot = (i) => "A" + (i + 1);
   if (!LISTA_CONFIRMADA && r.modo === "microfones" && r.mics.length > lerPessoas().pessoas.length) {
     const lista = r.mics.map((tr) => rot(tr)).join(", ");

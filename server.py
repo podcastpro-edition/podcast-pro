@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.116"
+VERSAO = "1.0.117"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -697,11 +697,12 @@ def avaliar_audios(faixas, cameras, pessoas, recorte=None):
     t0 = rec[0] if rec else 0.0
     dur_an = min(600.0, (rec[1] - rec[0])) if rec else 600.0
     de_camera = {norm(c) for c in cameras.values()}
-    grupos, canal_de = {}, {}
+    grupos, canal_de, posicao_de = {}, {}, {}
     for f in faixas:
         lista = grupos.setdefault(norm(f["path"]), [])
         # 'canal' = número real do canal no arquivo (vem do nome do clipe); sem ele, vale a ordem das trilhas
         canal_de[f["trilha"]] = int(f["canal"]) if f.get("canal") is not None else len(lista)
+        posicao_de[f["trilha"]] = len(lista)
         lista.append(f["trilha"])
 
     info, envs = [], {}
@@ -712,9 +713,24 @@ def avaliar_audios(faixas, cameras, pessoas, recorte=None):
             item["tipo"] = "camera"
             info.append(item)
             continue
-        try:
-            e = envelope_db(ler_canal(f["path"], canal_de[t], 8000, t0, dur_an), 8000, 0.1)
-        except Exception:
+        # tenta o canal real (do nome do clipe); se não existir ou estiver mudo, tenta pela ordem das trilhas
+        candidatos = [canal_de[t]]
+        pos = posicao_de.get(t)
+        if pos is not None and pos not in candidatos:
+            candidatos.append(pos)
+        e = None
+        for cand in candidatos:
+            try:
+                e_try = envelope_db(ler_canal(f["path"], cand, 8000, t0, dur_an), 8000, 0.1)
+            except Exception:
+                continue
+            if e is None or float(np.percentile(e_try, 95)) > float(np.percentile(e, 95)):
+                e = e_try
+                item["canal"] = cand
+            if float(np.percentile(e_try, 95)) >= -50:
+                e, item["canal"] = e_try, cand
+                break
+        if e is None:
             item["tipo"] = "vazia"
             info.append(item)
             continue
