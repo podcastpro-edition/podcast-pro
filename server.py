@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.121"
+VERSAO = "1.0.122"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1193,6 +1193,113 @@ def priorizar_apresentador(trechos, pessoas, apresentadores, nivel):
     return trechos
 
 
+# ---------------------------------------- troca de câmera pelo olhar (rosto virado para a lente)
+
+def _serie_olhar(caminho, a0, dur, fps=2, largura=480):
+    """Para cada 1/fps segundo do trecho [a0, a0+dur] (tempo do arquivo), nota de 'rosto de frente para a
+    câmera' (0 = nenhum rosto de frente). Lê só os quadros-chave, o que é bem mais rápido."""
+    import numpy as np
+    import cv2
+    W, H = tamanho_video(caminho)
+    ah = int(round(H * largura / W / 2.0)) * 2
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-hwaccel", "auto", "-skip_frame", "nokey"]
+    if a0 > 0:
+        cmd += ["-ss", f"{a0:.3f}"]
+    cmd += ["-t", f"{dur:.3f}", "-i", caminho, "-an", "-vf", f"fps={fps},scale={largura}:{ah},format=gray",
+            "-f", "rawvideo", "-"]
+    bruto = subprocess.run(cmd, capture_output=True).stdout
+    tam = largura * ah
+    n = len(bruto) // tam
+    det = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    if det.empty():
+        raise RuntimeError("Não achei o detector de rostos do OpenCV. Rode o instalador de novo.")
+    nota = np.zeros(n)
+    for i in range(n):
+        q = np.frombuffer(bruto[i * tam:(i + 1) * tam], dtype=np.uint8).reshape(ah, largura)
+        if i and bruto[i * tam:(i + 1) * tam] == bruto[(i - 1) * tam:i * tam]:
+            nota[i] = nota[i - 1]  # quadro repetido (só há um quadro-chave nesse intervalo)
+            continue
+        q = cv2.equalizeHist(q)
+        faces, _, pesos = det.detectMultiScale3(q, scaleFactor=1.1, minNeighbors=4,
+                                                minSize=(largura // 16, largura // 16), outputRejectLevels=True)
+        if len(faces):
+            k = int(np.argmax([w * h for (x, y, w, h) in faces]))
+            nota[i] = float(pesos[k]) * (faces[k][2] / largura * 8)  # peso da detecção x tamanho do rosto
+    return nota
+
+
+def decidir_olhar(series, fps=2, minimo=3.0, folga=1.0):
+    """series: {camera: array de notas}. Devolve [(ini, fim, camera)] em segundos desde o começo da série.
+    A câmera escolhida é a que mais 'vê o rosto de frente'; só troca quando a outra é claramente melhor
+    e cada plano dura pelo menos 'minimo' segundos."""
+    import numpy as np
+    cams = list(series.keys())
+    n = min(len(v) for v in series.values())
+    if n < fps * 4:
+        return []
+    k = max(1, int(fps * folga * 2))
+    suave = {c: np.convolve(series[c][:n], np.ones(k) / k, mode="same") for c in cams}
+    atual, escolha = None, []
+    for i in range(n):
+        melhor = max(cams, key=lambda c: suave[c][i])
+        outros = [suave[c][i] for c in cams if c != melhor]
+        segundo = max(outros) if outros else 0.0
+        if suave[melhor][i] <= 0.05:
+            cam = atual  # ninguém de frente: segue na mesma câmera
+        elif atual is None or melhor == atual:
+            cam = melhor
+        else:
+            cam = melhor if suave[melhor][i] > suave[atual][i] * 1.25 + 0.05 else atual
+        if cam is None:
+            cam = melhor
+        atual = cam
+        escolha.append(cam)
+    # planos mínimos: pedaços curtos viram parte do plano vizinho
+    planos = []
+    for i, c in enumerate(escolha):
+        if planos and planos[-1][2] == c:
+            planos[-1][1] = (i + 1) / fps
+        else:
+            planos.append([i / fps, (i + 1) / fps, c])
+    while len(planos) > 1:
+        j = min(range(len(planos)), key=lambda x: planos[x][1] - planos[x][0])
+        if planos[j][1] - planos[j][0] >= minimo:
+            break
+        v = j - 1 if j > 0 else 1
+        planos[v][0] = min(planos[v][0], planos[j][0])
+        planos[v][1] = max(planos[v][1], planos[j][1])
+        del planos[j]
+        fund = [planos[0]]
+        for p in planos[1:]:
+            if p[2] == fund[-1][2]:
+                fund[-1][1] = p[1]
+            else:
+                fund.append(p)
+        planos = fund
+    return [(a, b, c) for a, b, c in planos]
+
+
+def trechos_pelo_olhar(cameras, atraso, rec0, rec1):
+    """Trechos [{ini, fim, quem, camera}] em tempo do gravador, escolhidos pelo olhar. [] se não deu."""
+    from concurrent.futures import ThreadPoolExecutor
+    fps = 2
+
+    def uma(cam):
+        import numpy as np
+        d = atraso[cam]["valor"]
+        a0 = max(0.0, rec0 + d)
+        nota = _serie_olhar(cameras[cam], a0, rec1 - rec0 - max(0.0, -(rec0 + d)), fps)
+        falta = int(round((a0 - d - rec0) * fps))  # câmera que começa depois: completa o começo com zeros
+        return cam, (np.concatenate([np.zeros(max(0, falta)), nota]) if falta > 0 else nota)
+
+    with ThreadPoolExecutor(max_workers=max(1, len(cameras))) as ex:
+        series = dict(ex.map(uma, list(cameras.keys())))
+    if not any(len(v) and float(v.max()) > 0 for v in series.values()):
+        return []
+    planos = decidir_olhar(series, fps)
+    return [{"ini": rec0 + a, "fim": rec0 + b, "quem": "olhar", "camera": c} for a, b, c in planos]
+
+
 def alternar_sem_imagem(trechos, pessoas, geral, tempo=11.0):
     """Quem fala mas não aparece em nenhuma câmera (só se ouve a voz): a imagem alterna entre os
     ângulos que existem (ex.: duas câmeras no apresentador), trocando a cada ~'tempo' segundos."""
@@ -1234,7 +1341,7 @@ def alternar_sem_imagem(trechos, pessoas, geral, tempo=11.0):
 
 def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
                   cortar_silencios=False, faixas=None, apresentador=None, prioridade=0,
-                  trechos_prontos=None, recorte=None, corrigir_camera=None):
+                  trechos_prontos=None, recorte=None, corrigir_camera=None, modo="fala"):
     """Junta tudo: sincronia das câmeras, quem fala, silêncios a cortar.
     cameras: {"V1": caminho, ...}. Devolve o plano de montagem."""
     total = duracao_total(wav)
@@ -1256,6 +1363,13 @@ def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
         trechos, tempo, alguem, janela = quem_fala(pessoas, wav, duracao_minima=duracao_minima, recorte=recorte)
     trechos = priorizar_apresentador(trechos, pessoas, apresentador, int(prioridade or 0))
     trechos = alternar_sem_imagem(trechos, pessoas, geral)
+    if modo == "olhar":
+        rec_o = _recorte_ok(recorte, total)
+        pelo_olhar = trechos_pelo_olhar(cameras, atraso, rec_o[0] if rec_o else 0.0, rec_o[1] if rec_o else total)
+        if pelo_olhar:
+            trechos = pelo_olhar
+        else:
+            print("[podcast-pro] olhar: nenhum rosto de frente encontrado; usando quem fala")
     print("[podcast-pro] plano: pessoas=%s tempo=%s trechos=%d" % ([(p["nome"], p["camera"], p.get("canal")) for p in pessoas], {k: round(v) for k, v in tempo.items()}, len(trechos)))
 
     trocas_defeito, defeitos_achados = [], {}
@@ -3651,7 +3765,8 @@ class Handler(BaseHTTPRequestHandler):
                     float(corpo.get("duracaoMinima", 2.0)),
                     bool(corpo.get("cortarSilencios", False)), corpo.get("faixas"),
                     corpo.get("apresentadores") or corpo.get("apresentador"), int(corpo.get("prioridade", 0)),
-                    corpo.get("trechosProntos"), corpo.get("recorte"), corpo.get("corrigirCamera")))
+                    corpo.get("trechosProntos"), corpo.get("recorte"), corpo.get("corrigirCamera"),
+                    corpo.get("modo", "fala")))
 
             if self.path == "/buscar":
                 return self._responder(buscar_trechos(
