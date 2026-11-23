@@ -4778,18 +4778,22 @@ function formatoVertical() {
 }
 
 // ---- Zoom automático nos cortes ("jump zoom")
+// o Premiere devolve a escala "embrulhada": getStartValue() -> { value: { value: 88.9 } }
 async function valorEscala(p) {
-  for (const f of ["getValue", "getStartValue"]) {
+  for (const f of ["getStartValue", "getValue"]) {
     try {
       if (typeof p[f] !== "function") continue;
       let v = p[f](); if (v && typeof v.then === "function") v = await v;
-      if (v && typeof v === "object" && v.value !== undefined) v = v.value;
-      if (v && typeof v === "object" && typeof v.getValue === "function") v = v.getValue();
+      for (let k = 0; k < 4 && v && typeof v === "object"; k++) {
+        if (v.value !== undefined) v = v.value;
+        else if (typeof v.getValue === "function") { v = v.getValue(); if (v && typeof v.then === "function") v = await v; }
+        else break;
+      }
       const n = Number(v);
       if (isFinite(n) && n > 0) return n;
     } catch (e) { /* tenta o outro */ }
   }
-  return 100;
+  return null;
 }
 async function zoomNosCortes(tirar) {
   const ppro = require("premierepro");
@@ -4812,15 +4816,15 @@ async function zoomNosCortes(tirar) {
   }
   if (!alvo.length) return mostrar("Não achei clipes ligados na trilha V" + (iv + 1) + " nesse trecho.", true);
   mostrar((tirar ? "Tirando o zoom de " : "Aplicando zoom em ") + alvo.length + " cortes...\nNão mexa no Premiere.");
+  // cada clipe parte da escala que ele já tem (no vertical, cada pedaço tem a sua); só os cortes ímpares mudam
   const trabalhos = [];
-  let base = null;
-  for (let i = 0; i < alvo.length; i++) {
+  for (let i = 1; i < alvo.length; i += 2) {
     const cadeia = await alvo[i].getComponentChain();
     const mov = cadeia.getComponentAtIndex(1);
     const esc = mov.getParam(1);
-    if (base === null) base = await valorEscala(esc);
-    const alvoPct = tirar ? base : (i % 2 === 1 ? base * forca : base);
-    trabalhos.push({ esc, v: alvoPct });
+    const atual = await valorEscala(esc);
+    if (!atual) return mostrar("Não consegui ler a escala atual dos clipes nesta versão do Premiere. Nada foi alterado.", true);
+    trabalhos.push({ esc, v: tirar ? atual / forca : atual * forca });
   }
   for (let k = 0; k < trabalhos.length; k += 10) {
     const lote = trabalhos.slice(k, k + 10);
@@ -4829,8 +4833,8 @@ async function zoomNosCortes(tirar) {
     });
     await dormir(300);
   }
-  mostrar(tirar ? "Zoom retirado de " + alvo.length + " cortes (escala " + Math.round(base) + "%)."
-    : "Pronto: zoom de " + Math.round(forca * 100) + "% em " + Math.floor(alvo.length / 2) + " de " + alvo.length + " cortes da V" + (iv + 1) + ", alternando com o enquadramento normal.\n(Ctrl+Z desfaz; ou use \"Tirar o zoom\".)");
+  mostrar(tirar ? "Zoom retirado de " + trabalhos.length + " cortes da V" + (iv + 1) + "."
+    : "Pronto: zoom de " + Math.round(forca * 100) + "% em " + trabalhos.length + " de " + alvo.length + " cortes da V" + (iv + 1) + ", alternando com o enquadramento normal.\n(Ctrl+Z desfaz; ou use \"Tirar o zoom\" com o mesmo nível de zoom escolhido.)");
 }
 if ($("btnZoom")) $("btnZoom").addEventListener("click", () => semPressa(async () => {
   try { await zoomNosCortes(false); } catch (e) { mostrar("Erro ao aplicar o zoom:\n" + (e && e.message ? e.message : e), true); }
