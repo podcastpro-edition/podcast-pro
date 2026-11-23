@@ -807,11 +807,16 @@ function criarLinha(grupo, nome, cam, aud) {
   linha.appendChild(campo); linha.appendChild(sc); linha.appendChild(sa);
   const x = document.createElement("div");
   x.className = "tirar"; x.textContent = "×";
-  if (LINHAS[grupo].length === 0) { // a primeira de cada grupo fica fixa: só um espaço para alinhar
+  if (grupo === "ap" && LINHAS[grupo].length === 0) { // o primeiro apresentador fica fixo: só um espaço para alinhar
     x.style.opacity = "0";
     linha.appendChild(x);
-  } else { // as outras podem ser removidas
-    x.addEventListener("click", () => { lista.removeChild(linha); LINHAS[grupo] = LINHAS[grupo].filter((l) => l !== obj); });
+  } else { // as outras podem ser removidas (inclusive todos os participantes: só o apresentador)
+    x.addEventListener("click", () => {
+      lista.removeChild(linha);
+      LINHAS[grupo] = LINHAS[grupo].filter((l) => l !== obj);
+      LISTA_CONFIRMADA = true; // tirei de propósito: não perguntar de novo sobre pessoas "que faltam"
+      if (grupo === "pt" && !LINHAS.pt.length) { try { localStorage.setItem("ppSemParticipante", "1"); } catch (e) { /* sem armazenamento */ } }
+    });
     linha.appendChild(x);
   }
   lista.appendChild(linha);
@@ -886,10 +891,16 @@ const PODCAST = {
 (function () {
   if (!$("menuPartic")) return;
   criarLinha("ap", "Apresentador", "V2"); // áudio "Automático": o painel escolhe a melhor trilha
-  criarLinha("pt", "Participante 01", "V3");
+  let semPart = false;
+  try { semPart = localStorage.getItem("ppSemParticipante") === "1"; } catch (e) { /* sem armazenamento */ }
+  if (!semPart) criarLinha("pt", "Participante 01", "V3");
   if ($("pGeral")) $("pGeral").value = "V1";
   $("btnMaisApres").addEventListener("click", () => { LISTA_CONFIRMADA = false; criarLinha("ap"); });
-  $("btnMaisPart").addEventListener("click", () => { LISTA_CONFIRMADA = false; criarLinha("pt"); });
+  $("btnMaisPart").addEventListener("click", () => {
+    LISTA_CONFIRMADA = false;
+    try { localStorage.removeItem("ppSemParticipante"); } catch (e) { /* sem armazenamento */ }
+    criarLinha("pt");
+  });
   $("menuPartic").addEventListener("click", () => {
     AJUSTE_PEDIDO = false;
     if ($("btnConcluirPartic")) $("btnConcluirPartic").textContent = "✔ Concluir";
