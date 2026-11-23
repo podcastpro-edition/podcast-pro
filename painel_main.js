@@ -1033,7 +1033,11 @@ async function garantirAudio(ppro, sequencia) {
     return;
   }
   const cameras = {};
-  for (const v of camerasUsadas()) cameras[v] = await caminhoDaTrilha(ppro, sequencia, "V", parseInt(v.slice(1), 10) - 1);
+  const nVid = await sequencia.getVideoTrackCount();
+  for (const v of camerasUsadas()) {
+    const idx = parseInt(v.slice(1), 10) - 1;
+    if (idx < nVid) cameras[v] = await caminhoDaTrilha(ppro, sequencia, "V", idx); // câmera que não existe na sequência: o aviso vem depois
+  }
   const palpite0 = faixas.find((f) => !Object.values(cameras).includes(f.path));
   const recorte = palpite0 ? await recorteDaTrilha(ppro, sequencia, palpite0.trilha) : null;
   const r0 = await comRelogio("Analisando as trilhas de áudio (" + faixas.length + " trilhas)...\nSe já analisei esta sequência antes, é rápido.", () => chamar("/avaliar_audios", { faixas, cameras, recorte, pessoas: alvo.map((p) => ({ nome: p.nome, camera: p.camera })) }));
