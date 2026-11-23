@@ -70,7 +70,7 @@ def parar_tudo():
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.128"
+VERSAO = "1.0.129"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1319,7 +1319,7 @@ def decidir_olhar(series, fps=2, minimo=2.5, folga=0.5, antecipo=0.3):
     return [(a, b, c) for a, b, c in planos]
 
 
-def trechos_pelo_olhar(cameras, atraso, rec0, rec1):
+def _trechos_pelo_olhar_haar(cameras, atraso, rec0, rec1):
     """Trechos [{ini, fim, quem, camera}] em tempo do gravador, escolhidos pelo olhar. [] se não deu."""
     from concurrent.futures import ThreadPoolExecutor
     fps = 4  # amostras por segundo (os quadros-chave se repetem entre si)
@@ -1337,6 +1337,195 @@ def trechos_pelo_olhar(cameras, atraso, rec0, rec1):
     if not any(len(v) and float(v.max()) > 0 for v in series.values()):
         return []
     planos = decidir_olhar(series, fps)
+    return [{"ini": rec0 + a, "fim": rec0 + b, "quem": "olhar", "camera": c} for a, b, c in planos]
+
+
+
+# ---- corte pelo olhar v2: mede para onde a cabeça aponta (YuNet) e lê só os quadros-chave do disco ----
+MODELO_ROSTO = "face_detection_yunet_2023mar.onnx"
+SHA_MODELO_ROSTO = "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"
+_HWACCEL = {}
+_TRAVA_HW = threading.Lock()
+_TRAVA_MODELO = threading.Lock()
+
+
+def _modelo_rosto():
+    """Caminho do detector de rostos com pontos do rosto (YuNet). Baixa uma vez do endereço das
+    atualizações e confere a integridade. None se não der (aí o olhar usa o detector antigo)."""
+    import hashlib
+    caminho = os.path.join(_RAIZ, "modelos", MODELO_ROSTO)
+    with _TRAVA_MODELO:
+        if os.path.isfile(caminho):
+            return caminho
+        try:
+            dados = _baixar(MODELO_ROSTO)
+            if hashlib.sha256(dados).hexdigest() != SHA_MODELO_ROSTO:
+                print("[podcast-pro] olhar: detector de rostos veio corrompido")
+                return None
+            os.makedirs(os.path.dirname(caminho), exist_ok=True)
+            with open(caminho + ".novo", "wb") as f:
+                f.write(dados)
+            os.replace(caminho + ".novo", caminho)
+            return caminho
+        except Exception as e:
+            print("[podcast-pro] olhar: não consegui baixar o detector de rostos:", e)
+            return None
+
+
+def _hwaccel_video(caminho):
+    """Decodifica pela placa NVIDIA (cuda) se funcionar nesta máquina; senão deixa o FFmpeg escolher."""
+    with _TRAVA_HW:
+        if "v" not in _HWACCEL:
+            _HWACCEL["v"] = "auto"
+            try:
+                r = subprocess.run(["ffmpeg", "-v", "error", "-hwaccel", "cuda", "-skip_frame", "nokey", "-t", "2",
+                                    "-i", caminho, "-an", "-frames:v", "1", "-f", "null", "-"],
+                                   capture_output=True, timeout=30)
+                if r.returncode == 0:
+                    _HWACCEL["v"] = "cuda"
+            except Exception:
+                pass
+        return _HWACCEL["v"]
+
+
+def _desvio_rosto(det, img):
+    """Quanto a cabeça está virada em relação a esta câmera (0 = olhando para ela). inf = sem rosto."""
+    import numpy as np
+    _, f = det.detect(img)
+    if f is None or not len(f):
+        return float("inf")
+    f = max(f, key=lambda r: r[2] * r[3])  # o rosto maior (quem está na frente)
+    od, oe, nariz = f[4:6], f[6:8], f[8:10]
+    dist = float(np.linalg.norm(oe - od)) + 1e-6
+    meio = (od + oe) / 2
+    yaw = (nariz[0] - meio[0]) / dist
+    pitch = (nariz[1] - meio[1]) / dist - 0.55  # ~0,55 com a cabeça reta
+    return float(abs(yaw) + 0.5 * max(0.0, abs(pitch) - 0.25))
+
+
+def _serie_desvio(caminho, a0, dur, fps, modelo, largura=320):
+    """Desvio da cabeça a cada 1/fps s, lendo só os quadros-chave (o resto nem sai do disco)."""
+    import numpy as np
+    import cv2
+    W, H = tamanho_video(caminho)
+    ah = int(round(H * largura / W / 2.0)) * 2
+    det = cv2.FaceDetectorYN.create(modelo, "", (largura, ah), 0.6, 0.3, 20)
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-hwaccel", _hwaccel_video(caminho),
+           "-discard", "nokey", "-skip_frame", "nokey"]
+    if a0 > 0:
+        cmd += ["-ss", f"{a0:.3f}"]
+    cmd += ["-t", f"{dur:.3f}", "-i", caminho, "-an", "-vf", f"fps={fps},scale={largura}:{ah}",
+            "-pix_fmt", "bgr24", "-f", "rawvideo", "-"]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    tam = largura * ah * 3
+    out, ant, val = [], None, float("inf")
+    try:
+        while True:
+            b = p.stdout.read(tam)
+            if len(b) < tam:
+                break
+            q = np.frombuffer(b, np.uint8).reshape(ah, largura, 3)
+            amostra = q[::16, ::16]
+            if ant is not None and np.array_equal(amostra, ant):
+                out.append(val)  # quadro-chave repetido: mesma nota
+                continue
+            ant = amostra.copy()
+            val = _desvio_rosto(det, q)
+            out.append(val)
+    finally:
+        p.stdout.close()
+        p.wait()
+    return np.array(out, dtype=float)
+
+
+def _mediana3(x):
+    import numpy as np
+    y = x.copy()
+    for i in range(1, len(x) - 1):
+        y[i] = np.median(x[i - 1:i + 2])
+    return y
+
+
+def trechos_pelo_olhar(cameras, atraso, rec0, rec1, minimo=2.0, margem=0.08, antecipo=0.25):
+    """Trechos [{ini, fim, quem, camera}] em tempo do gravador: em cada momento, a câmera para a qual a
+    cabeça está mais virada. [] se não achou rosto. Sem o detector novo, usa o antigo."""
+    import numpy as np
+    import time as _t
+    from concurrent.futures import ThreadPoolExecutor
+    modelo = _modelo_rosto()
+    if not modelo:
+        return _trechos_pelo_olhar_haar(cameras, atraso, rec0, rec1)
+    fps = 2
+    t0 = _t.time()
+
+    def uma(cam):
+        d = atraso[cam]["valor"]
+        a0 = max(0.0, rec0 + d)
+        s = _serie_desvio(cameras[cam], a0, rec1 - rec0 - max(0.0, -(rec0 + d)), fps, modelo)
+        falta = int(round((a0 - d - rec0) * fps))  # câmera que começa depois: completa o começo
+        return cam, (np.concatenate([np.full(falta, np.inf), s]) if falta > 0 else s)
+
+    with ThreadPoolExecutor(max_workers=max(1, len(cameras))) as ex:
+        brutas = dict(ex.map(uma, list(cameras.keys())))
+    if not any(len(v) and np.isfinite(v).any() for v in brutas.values()):
+        return []
+    series = {c: _mediana3(v) for c, v in brutas.items()}
+    cams = list(series)
+    n = min(len(v) for v in series.values())
+    # câmera com menor desvio em cada instante, com histerese (não fica trocando por pouco)
+    atual, esc = None, []
+    for i in range(n):
+        melhor = min(cams, key=lambda c: series[c][i])
+        if not np.isfinite(series[melhor][i]):
+            cam = atual
+        elif atual is None:
+            cam = melhor
+        elif melhor != atual and series[melhor][i] < series[atual][i] - margem:
+            cam = melhor
+        else:
+            cam = atual
+        atual = cam if cam is not None else melhor
+        esc.append(atual)
+    planos = []
+    for i, c in enumerate(esc):
+        if planos and planos[-1][2] == c:
+            planos[-1][1] = (i + 1) / fps
+        else:
+            planos.append([i / fps, (i + 1) / fps, c])
+    while len(planos) > 1:  # planos curtos demais viram parte do vizinho
+        j = min(range(len(planos)), key=lambda x: planos[x][1] - planos[x][0])
+        if planos[j][1] - planos[j][0] >= minimo:
+            break
+        v = j - 1 if j > 0 else 1
+        planos[v][0] = min(planos[v][0], planos[j][0])
+        planos[v][1] = max(planos[v][1], planos[j][1])
+        del planos[j]
+        fund = [planos[0]]
+        for p in planos[1:]:
+            if p[2] == fund[-1][2]:
+                fund[-1][1] = p[1]
+            else:
+                fund.append(p)
+        planos = fund
+    # cada troca vai para o instante em que a nova câmera passa a velha (interpolado entre os
+    # quadros-chave) e sai um pouco antes, para não parecer atrasada
+    novos = {}
+    for k in range(1, len(planos)):
+        velha, nova = planos[k - 1][2], planos[k][2]
+        t = planos[k][0]
+        bv, bn = brutas[velha], brutas[nova]
+        i0 = max(1, int(round((t - 1.5) * fps)))
+        i1 = min(len(bv), len(bn), int(round((t + 0.5) * fps)) + 1)
+        for i in range(i0, i1):
+            if bn[i] < bv[i] and (i + 1 >= i1 or bn[i + 1] < bv[i + 1]):
+                d0, d1 = bn[i - 1] - bv[i - 1], bn[i] - bv[i]
+                fr = d0 / (d0 - d1) if np.isfinite(d0) and d0 > 0 else 1.0
+                tc = (i - 1 + fr) / fps
+                novos[k] = min(planos[k][1] - minimo / 2, max(planos[k - 1][0] + minimo / 2, tc - antecipo))
+                break
+    for k, t in novos.items():
+        planos[k - 1][1] = planos[k][0] = t
+    print("[podcast-pro] olhar: %d trocas em %.1f s (%s)" % (len(planos) - 1, _t.time() - t0, _HWACCEL.get("v")))
     return [{"ini": rec0 + a, "fim": rec0 + b, "quem": "olhar", "camera": c} for a, b, c in planos]
 
 

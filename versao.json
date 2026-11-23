@@ -1,9 +1,9 @@
 {
-  "versao": "1.0.128",
-  "notas": "Corte pelo olhar: troca mais rapida (puxa o corte para o instante certo e sai um pouco antes)",
+  "versao": "1.0.129",
+  "notas": "Corte pelo olhar mede para onde a cabeca aponta (sem atraso) e le so os quadros-chave; procura de tremidas desligada por padrao (montagem bem mais rapida)",
   "arquivos": {
-    "server.py": "a9c0175c6a671214cb5b6b305592a2882f944b392264103c355b7beee044b906",
-    "painel_index.html": "9ca75e828071bb1b2ae09d9aaac45867a84102a69628dd9e8e7d2a473bc9c009",
+    "server.py": "72299eaf2996c83a4ae0ff895a27e3645f2939ef0c66a524a914f54708a87426",
+    "painel_index.html": "93d516d16e53246c3a46ea21ea01394b8310b4e672df00bb31391684e6dc40c2",
     "painel_main.js": "04d3c28fa7ddd7e97e0b8fe18f0f380c9d8ad72bf55d93f5f404c31a27ddcc74",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
