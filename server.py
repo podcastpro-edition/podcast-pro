@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.122"
+VERSAO = "1.0.123"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1341,7 +1341,7 @@ def alternar_sem_imagem(trechos, pessoas, geral, tempo=11.0):
 
 def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
                   cortar_silencios=False, faixas=None, apresentador=None, prioridade=0,
-                  trechos_prontos=None, recorte=None, corrigir_camera=None, modo="fala"):
+                  trechos_prontos=None, recorte=None, corrigir_camera=None, modo="auto"):
     """Junta tudo: sincronia das câmeras, quem fala, silêncios a cortar.
     cameras: {"V1": caminho, ...}. Devolve o plano de montagem."""
     total = duracao_total(wav)
@@ -1363,6 +1363,11 @@ def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
         trechos, tempo, alguem, janela = quem_fala(pessoas, wav, duracao_minima=duracao_minima, recorte=recorte)
     trechos = priorizar_apresentador(trechos, pessoas, apresentador, int(prioridade or 0))
     trechos = alternar_sem_imagem(trechos, pessoas, geral)
+    if modo == "auto":
+        # automático: se há mais câmeras do que pessoas com imagem (vários ângulos da mesma pessoa),
+        # o corte vai pelo olhar; se cada câmera é uma pessoa, vai por quem fala
+        com_imagem = {p["camera"] for p in pessoas if not p.get("semImagem")}
+        modo = "olhar" if len(cameras) > len(com_imagem) else "fala"
     if modo == "olhar":
         rec_o = _recorte_ok(recorte, total)
         pelo_olhar = trechos_pelo_olhar(cameras, atraso, rec_o[0] if rec_o else 0.0, rec_o[1] if rec_o else total)
@@ -3766,7 +3771,7 @@ class Handler(BaseHTTPRequestHandler):
                     bool(corpo.get("cortarSilencios", False)), corpo.get("faixas"),
                     corpo.get("apresentadores") or corpo.get("apresentador"), int(corpo.get("prioridade", 0)),
                     corpo.get("trechosProntos"), corpo.get("recorte"), corpo.get("corrigirCamera"),
-                    corpo.get("modo", "fala")))
+                    corpo.get("modo", "auto")))
 
             if self.path == "/buscar":
                 return self._responder(buscar_trechos(

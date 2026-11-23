@@ -1173,7 +1173,7 @@ async function montarPodcastInterno(limite, opcoes = {}) {
     }
 
     etapa = "calcular o plano de cortes";
-    mostrar(($("modoCorte") && $("modoCorte").value === "olhar" ? "Olhando para onde o rosto está virado em cada câmera, " : "") + "Calculando sincronia e cortes" + ($("corrigirCam") && $("corrigirCam").value === "1" ? " e procurando tremidas nas câmeras" : "") + "...\n(pode levar alguns minutos; não mexa no Premiere)");
+    mostrar("Calculando sincronia e cortes" + ($("corrigirCam") && $("corrigirCam").value === "1" ? " e procurando tremidas nas câmeras" : "") + "...\n(pode levar alguns minutos; não mexa no Premiere)");
     const plano = await chamar("/plano_podcast", {
       path: wav, cameras,
       pessoas: PODCAST.pessoas.map((p) => ({ nome: p.nome, canal: p.canal, camera: p.camera, semImagem: !!p.semImagem })),
@@ -1182,7 +1182,7 @@ async function montarPodcastInterno(limite, opcoes = {}) {
       cortarSilencios: PODCAST.cortarSilencios,
       faixas: opcoes.faixas || null,
       trechosProntos, recorte,
-      modo: $("modoCorte") ? $("modoCorte").value : "fala",
+      modo: "auto",
       corrigirCamera: $("corrigirCam") && $("corrigirCam").value === "1" ? ($("sensCam") ? $("sensCam").value : "media") : null,
     });
     const pecas = plano.pecas.filter((p) => p.t < limite);
