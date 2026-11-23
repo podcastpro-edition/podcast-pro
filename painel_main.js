@@ -2,8 +2,11 @@ const SERVICO = "http://127.0.0.1:8765";
 
 const $ = (id) => document.getElementById(id);
 const status = $("status");
+let ocupado = false; // uma ação em andamento
+let PARADO = false; // true depois de clicar em "Parar esta ação"
 
 function mostrar(texto, erro = false) {
+  if (typeof PARADO !== "undefined" && PARADO && !ocupado) return; // depois de "Parar", mensagens da ação antiga não aparecem
   status.textContent = texto;
   status.className = erro ? "erro" : "";
   if (CARREGANDO.ativo && $("carregandoTexto")) $("carregandoTexto").textContent = String(texto).split("\n")[0].slice(0, 90);
@@ -17,6 +20,7 @@ function carregando(ligar, erro) {
   if (ligar) {
     CARREGANDO.ativo = true;
     caixa.style.display = "block";
+    if ($("btnParar")) $("btnParar").style.display = "block";
     barra.style.backgroundColor = "#ff6a2b";
     barra.style.width = "25%";
     txt.textContent = "Trabalhando... não mexa no Premiere.";
@@ -29,6 +33,7 @@ function carregando(ligar, erro) {
     }, 70);
   } else {
     CARREGANDO.ativo = false;
+    if ($("btnParar")) $("btnParar").style.display = "none";
     if (CARREGANDO.timer) { clearInterval(CARREGANDO.timer); CARREGANDO.timer = null; }
     barra.style.marginLeft = "0%";
     barra.style.width = "100%";
@@ -47,12 +52,23 @@ async function comRelogio(texto, tarefa) {
   try { return await tarefa(); } finally { clearInterval(id); }
 }
 
+const CONTROLES = new Set();
 async function chamar(rota, corpo) {
-  const resposta = await fetch(SERVICO + rota, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(corpo),
-  });
+  if (PARADO) throw new Error("Ação parada por você.");
+  const ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  if (ctl) CONTROLES.add(ctl);
+  let resposta;
+  try {
+    resposta = await fetch(SERVICO + rota, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(corpo),
+      signal: ctl ? ctl.signal : undefined,
+    });
+  } catch (e) {
+    if (PARADO) throw new Error("Ação parada por você.");
+    throw e;
+  } finally { if (ctl) CONTROLES.delete(ctl); }
   const dados = await resposta.json();
   if (!resposta.ok || dados.erro) throw new Error(dados.erro || "Erro no serviço local");
   return dados;
@@ -631,13 +647,33 @@ async function cortarTudo(caminho, prefixo) {
 }
 
 // Evita começar duas coisas ao mesmo tempo (o Premiere não gosta).
-let ocupado = false;
+let TAREFA_ID = 0;
 async function semPressa(tarefa) {
-  if (ocupado) return mostrar("Ainda estou trabalhando. Espere terminar.", true);
+  if (ocupado) return mostrar("Ainda estou trabalhando. Espere terminar, ou clique em \"Parar esta ação\".", true);
   ocupado = true;
+  PARADO = false;
+  const eu = ++TAREFA_ID;
   carregando(true);
-  try { await tarefa(); } finally { ocupado = false; carregando(false); }
+  try { await tarefa(); } finally { if (eu === TAREFA_ID) { ocupado = false; carregando(false); } }
 }
+
+// Botão "Parar esta ação": solta o painel na hora e manda o programa local parar o que estiver fazendo.
+function pararAcao() {
+  if (!ocupado) return;
+  PARADO = true;
+  TAREFA_ID++; // a ação antiga não mexe mais no estado do painel
+  for (const c of Array.from(CONTROLES)) { try { c.abort(); } catch (e) { /* segue */ } }
+  CONTROLES.clear();
+  try { fetch(SERVICO + "/parar", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); } catch (e) { /* segue */ }
+  ocupado = false;
+  try { $("popup").style.display = "none"; } catch (e) { /* sem popup */ }
+  status.textContent = "Parei. Você já pode começar outra ação.";
+  status.className = "";
+  carregando(false);
+  const txt = $("carregandoTexto");
+  if (txt) txt.textContent = "⏹ Parado. Pode começar outra ação.";
+}
+if ($("btnParar")) $("btnParar").addEventListener("click", pararAcao);
 
 $("btnCortarTudo").addEventListener("click", () => semPressa(async () => {
   const caminho = await obterCaminho();

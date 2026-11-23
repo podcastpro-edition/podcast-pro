@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.124",
-  "notas": "Podcast: ajusta sozinho as caixas ao que a sequencia tem (camera ou audio inexistente), sem perguntar",
+  "versao": "1.0.125",
+  "notas": "Botao Parar esta acao: solta o painel na hora e encerra o trabalho do programa local",
   "arquivos": {
-    "server.py": "c1b1e21cb5e4c95508bb5b3e756fddec27c4df3e9021eac56f832305abf3bbd9",
-    "painel_index.html": "4c3739e239630f9d64cbc0be20a7b8e198e53d2b775c6e43c7759dc675f63abb",
-    "painel_main.js": "68624b4ff315df6093f952938f56e3419816eabe87a71cfb947f8db1817a2736",
+    "server.py": "b89faa23bbdc96026e35868ed36df265fc368472cc476e2262fcf0bdbe41c0db",
+    "painel_index.html": "9ca75e828071bb1b2ae09d9aaac45867a84102a69628dd9e8e7d2a473bc9c009",
+    "painel_main.js": "99d7b743239b0c872b411af49889dbcbf9d8623dfa978571081adc8b2cf25ddb",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",

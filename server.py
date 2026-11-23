@@ -40,9 +40,37 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
         _popen_init(self, *a, **k)
     subprocess.Popen.__init__ = _popen_sem_janela
 
+# Guarda os programas auxiliares (FFmpeg etc.) em uso, para o botão "Parar" do painel poder encerrá-los
+import weakref
+_PROCESSOS = weakref.WeakSet()
+_popen_init_reg = subprocess.Popen.__init__
+
+
+def _popen_registrando(self, *a, **k):
+    _popen_init_reg(self, *a, **k)
+    try:
+        _PROCESSOS.add(self)
+    except Exception:
+        pass
+subprocess.Popen.__init__ = _popen_registrando
+
+
+def parar_tudo():
+    """Encerra o FFmpeg e outros programas que o trabalho em andamento estiver usando."""
+    n = 0
+    for p in list(_PROCESSOS):
+        try:
+            if p.poll() is None:
+                p.kill()
+                n += 1
+        except Exception:
+            pass
+    return n
+
+
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.124"
+VERSAO = "1.0.125"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -3511,6 +3539,8 @@ class Handler(BaseHTTPRequestHandler):
             tamanho = int(self.headers.get("Content-Length", 0))
             corpo = json.loads(self.rfile.read(tamanho) or b"{}")
             caminho = corpo.get("path", "")
+            if self.path == "/parar":
+                return self._responder({"ok": True, "encerrados": parar_tudo()})
             if self.path == "/atualizacao/aplicar":
                 res = aplicar_atualizacao()
                 self._responder(res)
