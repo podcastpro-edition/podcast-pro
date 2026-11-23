@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.113"
+VERSAO = "1.0.114"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -933,7 +933,7 @@ def defeitos_camera(caminho, ini, fim, sensibilidade="media", fps=10, largura=32
     W, H = tamanho_video(caminho)
     aw = largura
     ah = int(round(H * aw / W / 2.0)) * 2
-    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error"]
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-hwaccel", "auto"]
     if ini > 0:
         cmd += ["-ss", f"{ini:.3f}"]
     cmd += ["-t", f"{max(0.5, fim - ini):.3f}", "-i", caminho, "-an",
@@ -1118,6 +1118,45 @@ def priorizar_apresentador(trechos, pessoas, apresentadores, nivel):
     return trechos
 
 
+def alternar_sem_imagem(trechos, pessoas, geral, tempo=11.0):
+    """Quem fala mas não aparece em nenhuma câmera (só se ouve a voz): a imagem alterna entre os
+    ângulos que existem (ex.: duas câmeras no apresentador), trocando a cada ~'tempo' segundos."""
+    sem = {p["nome"] for p in pessoas if p.get("semImagem")}
+    if not sem:
+        return trechos
+    cams = []
+    for p in pessoas:
+        if not p.get("semImagem") and p["camera"] not in cams:
+            cams.append(p["camera"])
+    if geral not in cams:
+        cams.append(geral)
+    if len(cams) < 2:
+        return trechos
+    saida, atual, entrou = [], None, 0.0
+    for tr in trechos:
+        if tr["quem"] not in sem:
+            cam = tr["camera"] or geral
+            if cam != atual:
+                atual, entrou = cam, tr["ini"]
+            saida.append(tr)
+            continue
+        if atual is None:
+            atual, entrou = cams[0], tr["ini"]
+        a = tr["ini"]
+        while a < tr["fim"] - 0.01:
+            if a - entrou >= tempo:
+                atual = cams[(cams.index(atual) + 1) % len(cams)] if atual in cams else cams[0]
+                entrou = a
+            b = min(tr["fim"], entrou + tempo * 1.3) if tr["fim"] - a > tempo * 1.6 else tr["fim"]
+            if b - a < 0.05:
+                b = tr["fim"]
+            novo = dict(tr)
+            novo["ini"], novo["fim"], novo["camera"] = a, b, atual
+            saida.append(novo)
+            a = b
+    return saida
+
+
 def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
                   cortar_silencios=False, faixas=None, apresentador=None, prioridade=0,
                   trechos_prontos=None, recorte=None, corrigir_camera=None):
@@ -1141,15 +1180,22 @@ def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
     else:
         trechos, tempo, alguem, janela = quem_fala(pessoas, wav, duracao_minima=duracao_minima, recorte=recorte)
     trechos = priorizar_apresentador(trechos, pessoas, apresentador, int(prioridade or 0))
+    trechos = alternar_sem_imagem(trechos, pessoas, geral)
 
     trocas_defeito, defeitos_achados = [], {}
     if corrigir_camera:
         rec_d = _recorte_ok(recorte, total)
-        for cam, info in atraso.items():
-            d = info["valor"]  # a câmera está 'd' segundos adiante do gravador
+        from concurrent.futures import ThreadPoolExecutor
+        def _procurar(cam):
+            d = atraso[cam]["valor"]  # a câmera está 'd' segundos adiante do gravador
             a0 = (rec_d[0] if rec_d else 0.0) + d
             b0 = (rec_d[1] if rec_d else total) + d
-            achados = defeitos_camera(cameras[cam], max(0.0, a0), b0, corrigir_camera)
+            return cam, defeitos_camera(cameras[cam], max(0.0, a0), b0, corrigir_camera)
+        with ThreadPoolExecutor(max_workers=max(1, len(atraso))) as ex:  # as câmeras são lidas ao mesmo tempo
+            resultados = dict(ex.map(_procurar, list(atraso.keys())))
+        for cam, info in atraso.items():
+            d = info["valor"]
+            achados = resultados[cam]
             # em tempo do gravador, com folga para a troca não virar uma "piscada" de menos de 0,6 s
             lista = []
             for x in achados:

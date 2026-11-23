@@ -759,6 +759,7 @@ function criarLinha(grupo, nome, cam, aud) {
   campo.addEventListener("focus", () => { try { campo.select(); } catch (e) { /* segue */ } });
   const sc = document.createElement("select");
   for (const v of ["V1", "V2", "V3", "V4"]) { const o = document.createElement("option"); o.value = v; o.textContent = v; sc.appendChild(o); }
+  { const o = document.createElement("option"); o.value = "G"; o.textContent = "Sem imagem"; sc.appendChild(o); }
   const sa = document.createElement("select");
   { const o = document.createElement("option"); o.value = "-2"; o.textContent = "Automático"; sa.appendChild(o); }
   { const o = document.createElement("option"); o.value = "-1"; o.textContent = "Voz única"; sa.appendChild(o); }
@@ -799,7 +800,10 @@ function lerPessoas() {
         if (AUTO && AUTO.vozUnica) { vozUnica = true; trilhaAudio = AUTO.trilha; }
         else if (AUTO && AUTO.mapa && AUTO.mapa[base] !== undefined) trilhaAudio = AUTO.mapa[base];
       }
-      pessoas.push({ nome, trilhaAudio, camera: l.cam.value, vozUnica, auto: aud === -2 });
+      // "Sem imagem": só se ouve a voz (não aparece em câmera). A imagem fica na câmera geral/ângulos do apresentador.
+      const semImagem = l.cam.value === "G";
+      const camPessoa = semImagem ? ($("pGeral") ? $("pGeral").value : "V1") : l.cam.value;
+      pessoas.push({ nome, trilhaAudio, camera: camPessoa, semImagem, vozUnica, auto: aud === -2 });
       if (g === "ap") apresentadores.push(nome);
     }
   }
@@ -920,7 +924,7 @@ $("btnPodcast").addEventListener("click", () => semPressa(async () => {
     mostrar("2/2 Detectando quem fala...\n(pode levar uns 30 segundos)");
     const fala = await chamar("/speakers", {
       path: wav,
-      pessoas: PODCAST.pessoas.map((p) => ({ nome: p.nome, canal: p.canal, camera: p.camera })),
+      pessoas: PODCAST.pessoas.map((p) => ({ nome: p.nome, canal: p.canal, camera: p.camera, semImagem: !!p.semImagem })),
     });
     const tempos = Object.keys(fala.tempo).map((k) => k + ": " + Math.round(fala.tempo[k]) + " s").join(" | ");
     const amostra = fala.trechos.slice(0, 12).map((t) =>
@@ -1119,7 +1123,7 @@ async function montarPodcastInterno(limite, opcoes = {}) {
     mostrar("Calculando sincronia e cortes" + ($("corrigirCam") && $("corrigirCam").value === "1" ? " e procurando tremidas nas câmeras" : "") + "...\n(pode levar alguns minutos; não mexa no Premiere)");
     const plano = await chamar("/plano_podcast", {
       path: wav, cameras,
-      pessoas: PODCAST.pessoas.map((p) => ({ nome: p.nome, canal: p.canal, camera: p.camera })),
+      pessoas: PODCAST.pessoas.map((p) => ({ nome: p.nome, canal: p.canal, camera: p.camera, semImagem: !!p.semImagem })),
       geral: PODCAST.geral, apresentadores: PODCAST.apresentadores, prioridade: PODCAST.prioridade,
       minimo: lerNumero("minimo"), respiro: lerNumero("respiro"),
       cortarSilencios: PODCAST.cortarSilencios,
@@ -1412,7 +1416,7 @@ $("btnLegendasPodcast").addEventListener("click", () => semPressa(async () => {
 
     const r = await chamar("/legendas_podcast", {
       path: wav,
-      pessoas: PODCAST.pessoas.map((p) => ({ nome: p.nome, canal: p.canal, camera: p.camera })),
+      pessoas: PODCAST.pessoas.map((p) => ({ nome: p.nome, canal: p.canal, camera: p.camera, semImagem: !!p.semImagem })),
       model: $("modelo").value, device: $("dispositivo").value, language: "pt", reuse: true,
     });
     clearInterval(relogio); relogio = null;
