@@ -1,0 +1,191 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Instalar - PODCAST PRO</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden}
+body{font:13px "Segoe UI",Tahoma,Arial,sans-serif;color:#000;background:#f0f0f0;user-select:none;cursor:default}
+#janela{display:flex;flex-direction:column;height:100%}
+#corpo{flex:1;position:relative;background:#fff;min-height:0}
+.pag{position:absolute;inset:0;display:none}
+.pag.on{display:block}
+/* páginas com faixa lateral (boas-vindas e fim) */
+.lado{position:absolute;left:0;top:0;bottom:0;width:164px}
+.lado svg{display:block;width:100%;height:100%}
+.dir{position:absolute;left:186px;right:22px;top:20px;bottom:10px}
+.dir h1{font-size:19px;font-weight:700;margin:0 0 20px;line-height:1.25}
+.dir p{margin:0 0 14px;line-height:1.45}
+/* páginas internas com cabeçalho */
+.cab{position:absolute;left:0;right:0;top:0;height:62px;background:#fff;border-bottom:1px solid #a0a0a0;padding:11px 20px}
+.cab b{display:block;font-size:13px;margin-bottom:5px}
+.cab span{margin-left:18px;color:#222}
+.cab svg{position:absolute;right:16px;top:8px}
+.int{position:absolute;left:22px;right:22px;top:80px;bottom:8px}
+.int p{margin:0 0 12px;line-height:1.45}
+.caixa{border:1px solid #adadad;background:#fff;padding:10px 12px;line-height:1.5;margin:6px 0 14px}
+/* barra de botões */
+#rodape{height:52px;background:#f0f0f0;border-top:1px solid #a0a0a0;display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:0 14px}
+.bt{min-width:84px;height:26px;padding:0 14px;border:1px solid #adadad;border-radius:3px;background:linear-gradient(#f2f2f2,#e1e1e1);font:13px "Segoe UI",Tahoma,Arial,sans-serif;color:#000}
+.bt:hover:not(:disabled){background:linear-gradient(#eaf6fd,#bee6fd);border-color:#3c7fb1}
+.bt:active:not(:disabled){background:#c4e5f6;border-color:#2c628b}
+.bt.pad{border-color:#3399ff;box-shadow:inset 0 0 0 1px #6cb5ff}
+.bt:disabled{color:#a0a0a0;border-color:#c8c8c8;background:#f4f4f4}
+.esp{width:10px}
+/* barra de progresso estilo Windows */
+.barra{height:22px;border:1px solid #bcbcbc;background:#e6e6e6;border-radius:2px;overflow:hidden;margin:6px 0 6px;position:relative}
+.barra i{display:block;height:100%;width:0;background:linear-gradient(#5fd067,#06b025 50%,#05a81f 51%,#32c64a);transition:width .5s linear;position:relative}
+.barra i:after{content:"";position:absolute;top:0;bottom:0;width:60px;right:0;background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.55),rgba(255,255,255,0));animation:br 1.6s linear infinite}
+@keyframes br{0%{transform:translateX(-120px);opacity:0}30%{opacity:1}100%{transform:translateX(0);opacity:0}}
+#pct{font-size:30px;font-weight:300;margin:14px 0 2px;color:#000}
+#msg{color:#333;min-height:18px;margin:0 0 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lista{margin-top:10px;line-height:1.75;color:#7a7a7a;font-size:12.5px}
+#lista div.o{color:#1a7f37}#lista div.f{color:#000;font-weight:600}#lista div.e{color:#c00;font-weight:600}
+#lista div:before{content:"\25CB";display:inline-block;width:20px}
+#lista div.o:before{content:"\2713"}#lista div.f:before{content:"\25B6";font-size:10px}#lista div.e:before{content:"\2717"}
+.err{border-color:#d9534f;background:#fff4f4;color:#7a1a17;display:none}
+#disco{font:13px "Segoe UI",Tahoma,Arial,sans-serif;padding:2px 4px;margin:4px 0 2px 12px;min-width:250px}
+#avisoDisco{color:#9a5b00;margin:2px 0 0 12px;min-height:16px;font-size:12px}
+#modal{display:none;position:absolute;inset:0;background:rgba(0,0,0,.25);z-index:9;align-items:center;justify-content:center}
+#modal .m{width:380px;background:#fff;border:1px solid #6e6e6e;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+#modal .m .t{padding:18px 20px;line-height:1.5}
+#modal .m .b{background:#f0f0f0;border-top:1px solid #dfdfdf;padding:12px;display:flex;justify-content:flex-end;gap:8px}
+</style></head><body>
+<div id="janela">
+<div id="corpo">
+
+<!-- 1. boas-vindas -->
+<div class="pag on" id="p1">
+ <div class="lado"><svg viewBox="0 0 164 314" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2a3e"/><stop offset="1" stop-color="#14141e"/></linearGradient><linearGradient id="o" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9a3c"/><stop offset="1" stop-color="#ff5a1f"/></linearGradient></defs><rect width="164" height="314" fill="url(#g)"/><g transform="translate(82,118)"><rect x="-22" y="-52" width="44" height="76" rx="22" fill="url(#o)"/><path d="M-38 -8v10a38 38 0 0 0 76 0v-10" fill="none" stroke="url(#o)" stroke-width="7" stroke-linecap="round"/><path d="M0 40v22M-22 62h44" stroke="url(#o)" stroke-width="7" stroke-linecap="round"/></g><g stroke="#ff7a2b" stroke-width="4" stroke-linecap="round" opacity=".75"><path d="M18 238v14M30 230v30M42 236v18M54 226v38M66 234v22M78 222v46M90 234v22M102 226v38M114 236v18M126 230v30M138 238v14M150 242v6"/></g><text x="82" y="292" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="17" font-weight="800" fill="#fff" letter-spacing="1.5">PODCAST <tspan fill="#ff6a2b">PRO</tspan></text></svg></div>
+ <div class="dir">
+  <h1>Bem-vindo ao assistente de instalação do PODCAST PRO</h1>
+  <p>Este programa vai instalar o PODCAST PRO <b id="verIni">2</b> no seu computador, junto com o painel para o Adobe Premiere Pro.</p>
+  <p>Recomenda-se fechar o Premiere Pro antes de continuar.</p>
+  <p>Clique em Avançar para continuar ou em Cancelar para sair da instalação.</p>
+ </div>
+</div>
+
+<!-- 2. pronto para instalar -->
+<div class="pag" id="p2">
+ <div class="cab"><b>Pronto para instalar</b><span>O assistente está pronto para começar a instalação do PODCAST PRO.</span><svg width="44" height="44" viewBox="0 0 44 44"><rect width="44" height="44" rx="9" fill="#1b1b2a"/><rect x="16" y="8" width="12" height="20" rx="6" fill="#ff7a2b"/><path d="M11 20v3a11 11 0 0 0 22 0v-3M22 34v5M16 39h12" fill="none" stroke="#ff7a2b" stroke-width="2.4" stroke-linecap="round"/></svg></div>
+ <div class="int">
+  <p>Clique em Instalar para começar. Se quiser rever ou mudar alguma coisa, clique em Voltar.</p>
+  <div class="caixa">
+   <b>Disco onde instalar:</b><br>
+   <select id="disco"><option value="C">C: (padrão)</option></select>
+   <div id="avisoDisco"></div>
+   &nbsp;&nbsp;Pasta: <span id="pasta">C:\PODCAST_PRO</span><br><br>
+   <b>O que será instalado:</b><br>
+   &nbsp;&nbsp;Programa local do PODCAST PRO<br>
+   &nbsp;&nbsp;Python (só para o PODCAST PRO) e FFmpeg<br>
+   &nbsp;&nbsp;Pacotes de áudio e inteligência<br>
+   &nbsp;&nbsp;Painel do Premiere Pro<br>
+   &nbsp;&nbsp;Início automático com o Windows
+  </div>
+  <p>É preciso estar conectado à internet. A instalação leva de 5 a 15 minutos.</p>
+ </div>
+</div>
+
+<!-- 3. instalando -->
+<div class="pag" id="p3">
+ <div class="cab"><b>Instalando</b><span id="subInst">Aguarde enquanto o PODCAST PRO é instalado no seu computador.</span><svg width="44" height="44" viewBox="0 0 44 44"><rect width="44" height="44" rx="9" fill="#1b1b2a"/><rect x="16" y="8" width="12" height="20" rx="6" fill="#ff7a2b"/><path d="M11 20v3a11 11 0 0 0 22 0v-3M22 34v5M16 39h12" fill="none" stroke="#ff7a2b" stroke-width="2.4" stroke-linecap="round"/></svg></div>
+ <div class="int">
+  <div id="pct">0%</div>
+  <div class="barra"><i id="bp"></i></div>
+  <div id="msg">Preparando...</div>
+  <div id="lista"></div>
+  <div class="caixa err" id="erro"></div>
+ </div>
+</div>
+
+<!-- 4. concluído -->
+<div class="pag" id="p4">
+ <div class="lado"><svg viewBox="0 0 164 314" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2a3e"/><stop offset="1" stop-color="#14141e"/></linearGradient><linearGradient id="o2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9a3c"/><stop offset="1" stop-color="#ff5a1f"/></linearGradient></defs><rect width="164" height="314" fill="url(#g2)"/><g transform="translate(82,118)"><rect x="-22" y="-52" width="44" height="76" rx="22" fill="url(#o2)"/><path d="M-38 -8v10a38 38 0 0 0 76 0v-10" fill="none" stroke="url(#o2)" stroke-width="7" stroke-linecap="round"/><path d="M0 40v22M-22 62h44" stroke="url(#o2)" stroke-width="7" stroke-linecap="round"/></g><g stroke="#ff7a2b" stroke-width="4" stroke-linecap="round" opacity=".75"><path d="M18 238v14M30 230v30M42 236v18M54 226v38M66 234v22M78 222v46M90 234v22M102 226v38M114 236v18M126 230v30M138 238v14M150 242v6"/></g><text x="82" y="292" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="17" font-weight="800" fill="#fff" letter-spacing="1.5">PODCAST <tspan fill="#ff6a2b">PRO</tspan></text></svg></div>
+ <div class="dir">
+  <h1>Concluindo a instalação do PODCAST PRO</h1>
+  <p>A instalação foi concluída. O programa liga sozinho junto com o Windows.</p>
+  <p>Instalado em <b id="pastaFim">C:\PODCAST_PRO</b>.</p>
+  <p>1. Se o Premiere Pro estiver aberto, feche e abra de novo.<br>
+     2. No Premiere, abra o menu <b>Janela &gt; Extensões (UXP) &gt; PODCAST PRO</b>.</p>
+  <p id="extra"></p>
+  <p>Clique em Concluir para sair da instalação.</p>
+ </div>
+</div>
+
+<div id="modal"><div class="m"><div class="t" id="modalT"></div><div class="b"><button class="bt pad" id="mSim">Sim</button><button class="bt" id="mNao">Não</button></div></div></div>
+</div>
+<div id="rodape">
+ <button class="bt" id="bVoltar">&lt; Voltar</button>
+ <button class="bt pad" id="bAvancar">Avançar &gt;</button>
+ <span class="esp"></span>
+ <button class="bt" id="bCancelar">Cancelar</button>
+</div>
+</div>
+<script>
+var pag=1,fim=false,rod=false,temErro=false;
+function $(i){return document.getElementById(i)}
+function esc(t){return String(t).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c]})}
+function ir(n){
+ pag=n;
+ for(var i=1;i<=4;i++)$("p"+i).className="pag"+(i==n?" on":"");
+ var v=$("bVoltar"),a=$("bAvancar"),c=$("bCancelar");
+ v.style.display=(n==2)?"":"none";
+ a.style.display="";a.disabled=false;c.disabled=false;
+ if(n==1){a.textContent="Avançar >"}
+ if(n==2){a.textContent="Instalar"}
+ if(n==3){a.textContent="Avançar >";a.disabled=true}
+ if(n==4){a.textContent="Concluir";c.style.display="none"}
+}
+function perguntar(txt,sim){
+ $("modalT").textContent=txt;$("modal").style.display="flex";
+ $("mSim").onclick=function(){$("modal").style.display="none";sim()};
+ $("mNao").onclick=function(){$("modal").style.display="none"};
+}
+$("bAvancar").onclick=function(){
+ if(pag==3&&temErro){$("erro").style.display="none";temErro=false;fetch("/de_novo?disco="+disco());$("bAvancar").disabled=true;$("bAvancar").textContent="Avançar >";return}
+ if(pag==1)ir(2);
+ else if(pag==2){fetch("/iniciar?disco="+disco());ir(3)}
+ else if(pag==4){fetch("/fechar");$("corpo").innerHTML='<div style="padding:30px">Pode fechar esta janela.</div>';$("rodape").style.display="none";setTimeout(function(){window.close()},300)}
+};
+$("bVoltar").onclick=function(){if(pag==2)ir(1)};
+$("bCancelar").onclick=function(){
+ perguntar(pag==3&&rod?"A instalação ainda não terminou. Deseja realmente cancelar? (Se abrir de novo depois, ela continua de onde parou.)":"Deseja realmente sair da instalação do PODCAST PRO?",
+  function(){fetch("/cancelar");setTimeout(function(){window.close()},300)});
+};
+function tick(){
+ fetch("/estado").then(function(r){return r.json()}).then(function(e){
+  rod=e.rodando;
+  if(pag<3)return;
+  var h="";
+  for(var i=0;i<e.nomes.length;i++){
+   h+='<div class="'+["","f","o","e"][e.passos[i]]+'">'+esc(e.nomes[i])+'</div>';
+  }
+  $("lista").innerHTML=h;
+  var p=e.pronto?100:e.total;
+  $("pct").textContent=p+"%";$("bp").style.width=p+"%";
+  $("msg").textContent=e.msg||"";
+  if(e.pronto&&pag==3){
+   $("extra").textContent=e.painel=="manual"?"Se aparecer uma janela da Adobe pedindo para instalar o plugin, confirme.":"";
+   ir(4);
+  }
+  var er=$("erro");
+  if(e.erro){
+   er.style.display="block";er.innerHTML="<b>Não deu certo.</b><br>"+esc(e.erro)+"<br><br>Confira a internet e clique em Tentar de novo (ele continua de onde parou).";
+   $("bAvancar").textContent="Tentar de novo";$("bAvancar").disabled=false;temErro=true;
+  } else {er.style.display="none";if(temErro){temErro=false;$("bAvancar").textContent="Avançar >";$("bAvancar").disabled=true}}
+ }).catch(function(){});
+}
+function disco(){return $("disco").value||"C"}
+function mostrarPasta(){var d=disco();$("pasta").textContent=d+":\\PODCAST_PRO";
+ var o=$("disco").options[$("disco").selectedIndex];var livre=o?parseInt(o.getAttribute("data-livre")||"99",10):99;
+ var av="";if(livre<6)av="Pouco espaço livre neste disco ("+livre+" GB). O PODCAST PRO precisa de uns 4 GB, e os vídeos que ele gera usam mais.";
+ if(ATUAL&&ATUAL.charAt(0).toUpperCase()!=d)av=(av?av+" ":"")+"Já existe uma instalação em "+ATUAL+": o início automático passa para o disco "+d+": (a pasta antiga fica, pode apagar depois).";
+ $("avisoDisco").textContent=av}
+var ATUAL="";
+fetch("/discos").then(function(r){return r.json()}).then(function(e){
+ var s=$("disco"),h="";ATUAL=e.atual||"";
+ var pad=ATUAL?ATUAL.charAt(0).toUpperCase():"C";
+ for(var i=0;i<e.discos.length;i++){var d=e.discos[i];
+  h+='<option value="'+d.letra+'" data-livre="'+d.livreGB+'"'+(d.letra==pad?" selected":"")+'>'+d.letra+': '+(d.rotulo?esc(d.rotulo)+" ":"")+'('+d.livreGB+' GB livres de '+d.totalGB+' GB)'+(d.letra=="C"?" - padrão":"")+(ATUAL&&d.letra==ATUAL.charAt(0).toUpperCase()?" - instalado aqui":"")+'</option>'}
+ if(h)s.innerHTML=h;mostrarPasta()}).catch(function(){});
+$("disco").onchange=mostrarPasta;
+var _tick=tick;tick=function(){_tick();fetch("/estado").then(function(r){return r.json()}).then(function(e){if(e.raiz)$("pastaFim").textContent=e.raiz;if(e.versao)$("verIni").textContent=e.versao}).catch(function(){})};
+ir(1);setInterval(tick,600);tick();
+</script></body></html>
