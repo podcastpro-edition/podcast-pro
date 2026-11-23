@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.117"
+VERSAO = "1.0.118"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -693,7 +693,10 @@ def avaliar_audios(faixas, cameras, pessoas, recorte=None):
     from itertools import permutations
 
     norm = lambda c: os.path.normcase(os.path.abspath(c))
-    rec = _recorte_ok(recorte, duracao_total(faixas[0]["path"])) if faixas else None
+    try:
+        rec = _recorte_ok(recorte, duracao_total(faixas[0]["path"])) if faixas else None
+    except Exception:
+        rec = None  # arquivo ilegível: cada trilha vai aparecer com o erro dela
     t0 = rec[0] if rec else 0.0
     dur_an = min(600.0, (rec[1] - rec[0])) if rec else 600.0
     de_camera = {norm(c) for c in cameras.values()}
@@ -722,7 +725,8 @@ def avaliar_audios(faixas, cameras, pessoas, recorte=None):
         for cand in candidatos:
             try:
                 e_try = envelope_db(ler_canal(f["path"], cand, 8000, t0, dur_an), 8000, 0.1)
-            except Exception:
+            except Exception as ex:
+                item["erro"] = "canal %d: %s" % (cand + 1, str(ex)[-120:])
                 continue
             if e is None or float(np.percentile(e_try, 95)) > float(np.percentile(e, 95)):
                 e = e_try
@@ -743,12 +747,18 @@ def avaliar_audios(faixas, cameras, pessoas, recorte=None):
             item["tipo"] = "vazia"
         elif item["cobertura"] < 0.15:
             item["tipo"] = "efeitos"
+            envs[t] = (e, limiar)
         else:
             item["tipo"] = "fala"
             envs[t] = (e, limiar)
         info.append(item)
 
     falas = [i for i in info if i["tipo"] == "fala"]
+    if not falas:  # nada passou no teste de fala: usa as trilhas com som, mesmo com pouca fala marcada
+        for i in info:
+            if i["tipo"] == "efeitos":
+                i["tipo"] = "fala"
+        falas = [i for i in info if i["tipo"] == "fala"]
     master = None
     misturas = []
     if len(falas) >= 3:

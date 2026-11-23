@@ -1053,7 +1053,10 @@ async function garantirAudio(ppro, sequencia) {
     const lista = r.mics.map((tr) => rot(tr)).join(", ");
     if (await perguntarPessoasFaltando(r.mics.length, lerPessoas().pessoas.length, "microfones com fala", "Trilhas: " + lista + ".")) throw PARAR_FLUXO;
   }
-  if (!r.modo) throw new Error("Não achei nenhuma trilha de áudio com fala na sequência.");
+  if (!r.modo) {
+    const det = (r.faixas || []).map((f) => rot(f.trilha) + ": " + f.tipo + (f.nivel !== undefined ? " (volume " + f.nivel + " dB, fala " + Math.round((f.cobertura || 0) * 100) + "%)" : "") + (f.erro ? " [" + f.erro + "]" : "")).join("\n");
+    throw new Error("Não achei nenhuma trilha de áudio com fala entre as trilhas da sequência.\nO que vi em cada uma:\n" + det);
+  }
   const cobertura = {};
   for (const f of r.faixas) cobertura[f.trilha] = f.cobertura;
   const resumo = r.faixas.filter((f) => f.tipo !== "vazia").map((f) => rot(f.trilha) + ": " + f.tipo).join(", ");
