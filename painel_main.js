@@ -384,11 +384,14 @@ async function organizarCriativos(ppro, projeto) {
     }
   } catch (e) { return ""; } // se não deu para ver todas as sequências, não apaga nada
   const sobras = (await pasta.getItems()).filter((it) => ehCr(it.name) && !usados.has(it.name));
-  if (!sobras.length) return "";
+  if (!sobras.length) { try { await chamar("/criativo/apagar", { nomes: [] }); } catch (e) { /* segue */ } return ""; } // apaga os que ficaram presos antes
   try {
+    const nomesSobras = sobras.map((it) => it.name);
     projeto.lockedAccess(() => { projeto.executeTransaction((c) => { for (const it of sobras) c.addAction(pasta.createRemoveItemAction(it)); }, "Criativos: tirar os antigos"); });
     await dormir(500);
-    return " " + sobras.length + " criativo(s) antigo(s) tirados do projeto.";
+    let liberou = "";
+    try { const r = await chamar("/criativo/apagar", { nomes: nomesSobras }); if (r.apagados) liberou = " (" + r.mb + " MB liberados no disco)"; } catch (e) { /* fica para a próxima */ }
+    return " " + sobras.length + " criativo(s) antigo(s) tirados do projeto" + liberou + ".";
   } catch (e) { return ""; }
 }
 const textoOrganizar = (r) => (r.movidas ? " " + r.movidas + " legenda(s) soltas foram para a pasta \"" + NOME_BIN_LEG + "\"." : "") +
@@ -4451,6 +4454,7 @@ $("btnTesteModelo").addEventListener("click", async () => {
       t4.appendChild(linha("Saída suave (some devagar)", bolinha(C.anim.saida !== "nenhuma", (on) => { C.anim.saida = on ? "fade" : "nenhuma"; agendarPreviaC(); })));
     }
 
+    caixaC.appendChild(linha("Arquivo leve (1080p): mais rápido e menor; em sequência 4K o Premiere amplia", bolinha(!!C.leve, (on) => { C.leve = on; salvarC(); })));
     const criar = el("div", "ed-btn verde", "🎬 Criar criativo no trecho IN/OUT");
     criar.style.padding = "14px"; criar.style.fontSize = "15px";
     criar.addEventListener("click", () => semPressa(criarCriativoC));
@@ -4579,9 +4583,13 @@ $("btnTesteModelo").addEventListener("click", async () => {
       if (iv < 0) { iv = nV; criouTrilha = true; } // nenhuma livre: ao colocar numa trilha acima da última, o Premiere cria a trilha
       let LARG = 1920, ALT = 1080;
       try { const fs = await seq.getFrameSize(); if (fs && fs.width > 0) { LARG = fs.width; ALT = fs.height; } } catch (e) { /* usa 1920x1080 */ }
+      let escalaCr = 100;
+      if (C.leve && ALT > 1080) { escalaCr = (ALT / 1080) * 100; LARG = Math.round((LARG * 1080) / ALT / 2) * 2; ALT = 1080; }
       etapa = "desenhar o criativo";
-      mostrar("Desenhando o criativo (" + dur.toFixed(1).replace(".", ",") + " s)...");
+      mostrar("Desenhando o criativo (" + dur.toFixed(1).replace(".", ",") + " s, " + LARG + "x" + ALT + ")...");
+      const t0Cr = Date.now();
       const ov = await chamar("/criativo/gerar", { def: defC(), w: LARG, h: ALT, fps: 30, dur });
+      const infoCr = " (" + Math.round((Date.now() - t0Cr) / 1000) + " s para desenhar" + (ov.mb ? ", arquivo de " + (ov.mb >= 1000 ? (ov.mb / 1000).toFixed(1).replace(".", ",") + " GB" : Math.round(ov.mb) + " MB") : "") + ")";
       etapa = "importar o criativo";
       mostrar("Colocando o criativo na trilha V" + (iv + 1) + "...");
       const { porNome } = await importarLegendas(ppro, projeto, [ov.arquivo], "Criativos PODCAST PRO");
@@ -4602,12 +4610,24 @@ $("btnTesteModelo").addEventListener("click", async () => {
       }
       const tIni = await ppro.TickTime.createWithSeconds(ini);
       await executar(projeto, "Criativo: colocar", () => ed.createOverwriteItemAction(item, tIni, iv, 0));
+      if (escalaCr > 100.5) { // arquivo leve numa sequência maior: amplia para encher a tela
+        try {
+          const nomeArq = String(ov.arquivo).split(/[\\/]/).pop();
+          for (const it of await (await seq.getVideoTrack(iv)).getTrackItems(1, false)) {
+            const a = await s(() => it.getStartTime());
+            let nm = ""; try { nm = (await it.getProjectItem()).name; } catch (e) { nm = ""; }
+            if (Math.abs(a - ini) > 0.1 || nm !== nomeArq) continue;
+            const esc = (await it.getComponentChain()).getComponentAtIndex(1).getParam(1);
+            await executar(projeto, "Criativo: ampliar", () => esc.createSetValueAction(esc.createKeyframe(escalaCr), true));
+          }
+        } catch (e) { msgC("O criativo leve entrou, mas não consegui ampliar sozinho: em Controles de efeitos, ponha Escala em " + Math.round(escalaCr) + "%.", true); }
+      }
       let nV2 = nV;
       try { nV2 = await seq.getVideoTrackCount(); } catch (e) { nV2 = nV; }
       if (criouTrilha && nV2 <= nV) throw new Error("o Premiere não criou a nova trilha de vídeo. Adicione uma trilha de vídeo vazia (botão direito no nome das trilhas > Adicionar trilha) e tente de novo");
       let orgC = "";
       try { orgC = await organizarCriativos(ppro, projeto); } catch (e) { /* opcional */ }
-      mostrar((criouTrilha ? "Não havia trilha livre, então criei a V" + (iv + 1) + ". " : "") + (trocados ? "Troquei o criativo antigo pelo novo. " : "") + "Pronto! Criativo de " + dur.toFixed(1).replace(".", ",") + " s na trilha V" + (iv + 1) + " a partir de " + fmtT(ini) + ". É um clipe normal: arraste para mover ou puxe a ponta para mudar a duração. (Ctrl+Z desfaz.)" + orgC);
+      mostrar((criouTrilha ? "Não havia trilha livre, então criei a V" + (iv + 1) + ". " : "") + (trocados ? "Troquei o criativo antigo pelo novo. " : "") + "Pronto! Criativo de " + dur.toFixed(1).replace(".", ",") + " s na trilha V" + (iv + 1) + " a partir de " + fmtT(ini) + infoCr + ". É um clipe normal: arraste para mover ou puxe a ponta para mudar a duração. (Ctrl+Z desfaz.)" + orgC);
       msgC("Criativo colocado na trilha V" + (iv + 1) + ".");
     } catch (e) { const m = "Não consegui criar o criativo (etapa: " + etapa + "): " + (e && e.message ? e.message : e); mostrar(m, true); msgC(m, true); }
   }

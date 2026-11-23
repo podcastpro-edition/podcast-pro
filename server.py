@@ -70,7 +70,7 @@ def parar_tudo():
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "2.0.2"
+VERSAO = "2.0.3"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -2769,15 +2769,92 @@ def criativo_gerar(d, W, H, fps, dur, saida):
     paginas, fixos = _preparar_texto(normais, extra, anim, W, H, dur)
     n = max(2, int(round(dur * fps)))
     os.makedirs(os.path.dirname(saida), exist_ok=True)
+    # "-g": um quadro completo a cada 10 s (antes era a cada 12 quadros, e eram 96% do arquivo);
+    # os outros guardam só o que mudou, então trechos parados quase não ocupam espaço
     p = subprocess.Popen(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba",
-                          "-s", "%dx%d" % (W, H), "-r", str(fps), "-i", "-", "-c:v", "qtrle", "-pix_fmt", "argb", saida],
-                         stdin=subprocess.PIPE)
+                          "-s", "%dx%d" % (W, H), "-r", str(fps), "-i", "-", "-c:v", "qtrle", "-pix_fmt", "argb",
+                          "-g", str(int(round(fps * 10))), saida], stdin=subprocess.PIPE)
+    # quadros parados (sem animação no fundo nem no texto) são desenhados uma vez só e repetidos
+    d_ent_fundo = 0.0 if fundo["entrada"] == "nenhuma" else float(fundo["duracao"])
+    ent_pag = [_tempo_entrada(anim, len(pg["sp"])) for pg in paginas]
+    ent_ref = [_tempo_entrada(anim, len(rf["sp"])) for rf in fixos]
+
+    def chave_parada(t):
+        if fundo["zoomLento"] or t < d_ent_fundo or (fundo["saida"] and dur - t < 0.3):
+            return None
+        kp = kr = -1
+        for i, pg in enumerate(paginas):
+            if pg["t0"] - 1e-6 <= t < pg["t1"]:
+                tl = t - pg["t0"]
+                if not (ent_pag[i] < tl < (pg["t1"] - pg["t0"]) - 0.2):
+                    return None
+                kp = i
+                break
+        for i, rf in enumerate(fixos):
+            if rf["t0"] - 1e-6 <= t < rf["t1"]:
+                tl = t - rf["t0"]
+                if not (ent_ref[i] < tl < (rf["t1"] - rf["t0"]) - 0.2):
+                    return None
+                kr = i
+                break
+        return (kp, kr)
+    parados, desenhados = {}, 0
     for k in range(n):
-        p.stdin.write(_quadro_criativo(base, paginas, fixos, anim, fundo, W, H, k / fps, dur).tobytes())
+        t = k / fps
+        ch = chave_parada(t)
+        if ch is not None and ch in parados:
+            p.stdin.write(parados[ch])
+            continue
+        b = _quadro_criativo(base, paginas, fixos, anim, fundo, W, H, t, dur).tobytes()
+        desenhados += 1
+        if ch is not None:
+            if len(parados) > 4:  # guarda poucos (cada quadro 4K tem ~33 MB)
+                parados.clear()
+            parados[ch] = b
+        p.stdin.write(b)
     p.stdin.close()
     if p.wait() != 0:
         raise RuntimeError("O ffmpeg falhou ao desenhar o criativo.")
-    return {"arquivo": saida, "quadros": n}
+    return {"arquivo": saida, "quadros": n, "desenhados": desenhados,
+            "mb": round(os.path.getsize(saida) / 1e6, 1) if os.path.isfile(saida) else None}
+
+
+def apagar_criativos(nomes):
+    """Apaga do disco os criativos que saíram do projeto (só arquivos criativo_N.mov da pasta do cache).
+    O que o Premiere ainda estiver segurando fica anotado e é apagado numa próxima vez."""
+    pasta = os.path.join(_RAIZ, "cache", "criativos")
+    lista = os.path.join(pasta, "_apagar.txt")
+    pendentes = set()
+    try:
+        with open(lista, encoding="utf-8") as f:
+            pendentes = {l.strip() for l in f if l.strip()}
+    except OSError:
+        pass
+    pedidos = {os.path.basename(str(x)) for x in (nomes or [])}
+    n, mb, presos = 0, 0.0, set()
+    for nome in pedidos | pendentes:
+        if not re.fullmatch(r"criativo_\d+\.mov", nome):
+            continue
+        arq = os.path.join(pasta, nome)
+        if not os.path.isfile(arq):
+            continue
+        try:
+            tam = os.path.getsize(arq) / 1e6
+            os.remove(arq)
+            n += 1
+            mb += tam
+        except OSError:
+            presos.add(nome)  # em uso pelo Premiere: tenta de novo na próxima
+    try:
+        if presos:
+            os.makedirs(pasta, exist_ok=True)
+            with open(lista, "w", encoding="utf-8") as f:
+                f.write("\n".join(sorted(presos)))
+        elif os.path.isfile(lista):
+            os.remove(lista)
+    except OSError:
+        pass
+    return {"ok": True, "apagados": n, "mb": round(mb), "presos": len(presos)}
 
 
 def texto_do_trecho(caminho, inicio, fim, modelo, dispositivo, idioma):
@@ -4068,6 +4145,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._responder(criativo_gerar(corpo.get("def") or {}, corpo.get("w", 1920), corpo.get("h", 1080),
                                                       corpo.get("fps", 30), corpo.get("dur", 5),
                                                       os.path.join(_RAIZ, "cache", "criativos", nome)))
+            if self.path == "/criativo/apagar":
+                return self._responder(apagar_criativos(corpo.get("nomes")))
             if self.path == "/texto_trecho":
                 return self._responder(texto_do_trecho(
                     caminho, float(corpo.get("inicio", 0)), float(corpo.get("fim", 60)),
