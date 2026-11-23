@@ -2981,7 +2981,7 @@ $("menuAvTec").addEventListener("click", () => {
 
 // --- Abas do painel ---------------------------------------------------------
 (function () {
-  const abas = ["Inicio", "Podcast", "Legendas", "Criativos", "Vertical", "Virais", "Silencios", "Buscar", "Extras", "Avancado"];
+  const abas = ["Inicio", "Podcast", "Legendas", "Criativos", "Vertical", "Virais", "Silencios", "Buscar", "Extras", "Ecad", "Avancado"];
   const comTrecho = new Set([]);
   function abrir(nome) {
     abas.forEach((a) => {
@@ -4927,3 +4927,69 @@ if ($("btnCapitulos")) $("btnCapitulos").addEventListener("click", () => semPres
     mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
   }
 }));
+
+// --- ECAD: trilhas (arquivos com código ISRC, ex. BRPJ71902978) da sequência ativa ---
+function ecadTempo(seg) {
+  const s = Math.floor(seg + 0.001); // trunca segundos, como no ECAD manual (folga p/ erro de frame)
+  return Math.floor(s / 60) + "'" + String(s % 60).padStart(2, "0") + '"';
+}
+// usos: [{nome, inicio, fim}] em segundos. Mesma trilha várias vezes = tempos somados; ordem = 1ª entrada.
+function ecadMontar(usos) {
+  const mapa = {}, lista = [];
+  for (const u of usos) {
+    const m = u.nome.match(/[A-Z]{2}[A-Z0-9]{3}\d{7}/);
+    if (!m) continue;
+    let t = mapa[u.nome];
+    if (!t) { t = mapa[u.nome] = { nome: u.nome, codigo: m[0], inicio: u.inicio, dur: 0 }; lista.push(t); }
+    t.dur += u.fim - u.inicio;
+    t.inicio = Math.min(t.inicio, u.inicio);
+  }
+  lista.sort((a, b) => a.inicio - b.inicio);
+  return lista.map((t, i) => "TRL" + (i + 1) + "_" + t.codigo + "_" + ecadTempo(t.dur) + " - " + t.nome).join("\r\n\r\n");
+}
+(function () {
+  const seqAtiva = async () => (await (await require("premierepro").Project.getActiveProject()).getActiveSequence());
+  const aba = $("abaEcad");
+  if (aba) aba.addEventListener("click", async () => {
+    try { const s = await seqAtiva(); if (s) $("ecadNome").value = s.name; } catch (e) { /* sem sequência */ }
+  });
+  const bp = $("btnEcadPasta");
+  if (bp) bp.addEventListener("click", async () => {
+    try {
+      const pasta = await require("uxp").storage.localFileSystem.getFolder();
+      if (pasta) $("ecadPasta").value = pasta.nativePath;
+    } catch (e) { mostrar("Não consegui abrir o seletor de pastas: " + (e && e.message ? e.message : e), true); }
+  });
+  const bg = $("btnEcad");
+  if (bg) bg.addEventListener("click", async () => {
+    try {
+      const ppro = require("premierepro");
+      const seq = await seqAtiva();
+      if (!seq) return mostrar("Abra uma sequência primeiro.", true);
+      const usos = [];
+      const nA = await seq.getAudioTrackCount();
+      for (let i = 0; i < nA; i++) {
+        const trilha = await seq.getAudioTrack(i);
+        try { if (await trilha.isMuted()) continue; } catch (e) { /* sem leitura de mudo */ }
+        for (const it of await trilha.getTrackItems(1, false)) {
+          try { if (await it.isDisabled()) continue; } catch (e) { /* segue */ }
+          let nome = "";
+          try {
+            const pi = await it.getProjectItem();
+            nome = pi.name;
+            try { nome = String(await (await ppro.ClipProjectItem.cast(pi)).getMediaFilePath()).split(/[\/]/).pop() || nome; } catch (e) { /* fica o nome do item */ }
+          } catch (e) { continue; }
+          usos.push({ nome, inicio: (await it.getStartTime()).seconds, fim: (await it.getEndTime()).seconds });
+        }
+      }
+      const texto = ecadMontar(usos);
+      if (!texto) return mostrar("Nenhuma trilha com código (ex.: BRPJ...) nas faixas de áudio ativas.", true);
+      const nome = ($("ecadNome").value.trim() || seq.name).replace(/[\/:*?"<>|]/g, "_");
+      const pasta = $("ecadPasta").value.trim().replace(/[\/]+$/, "");
+      const r = await chamar("/ecad/salvar", { caminho: pasta + "\\" + nome + ".txt", texto });
+      mostrar("ECAD salvo em:\n" + r.caminho + "\n\n" + texto);
+    } catch (e) {
+      mostrar("Erro no ECAD:\n" + (e && e.message ? e.message : e), true);
+    }
+  });
+})();

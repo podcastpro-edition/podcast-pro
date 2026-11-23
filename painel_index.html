@@ -205,6 +205,7 @@
     <div id="abaSilencios" class="pill">Silêncios</div>
     <div id="abaBuscar" class="pill">Buscar</div>
     <div id="abaExtras" class="pill">Zoom e Capítulos</div>
+    <div id="abaEcad" class="pill">ECAD</div>
     <div id="abaAvancado" class="pill">Avançado</div>
   </div>
 
@@ -242,6 +243,7 @@
       <div class="card" data-aba="Criativos"><div class="ic">🎨</div><div class="t">Criativos</div><div class="d">Frase em tela cheia sobre imagem</div></div>
       <div class="card" data-aba="Buscar"><div class="ic">🔍</div><div class="t">Buscar</div><div class="d">Monta só os trechos de um assunto</div></div>
       <div class="card" data-aba="Extras"><div class="ic">🔎</div><div class="t">Zoom e Capítulos</div><div class="d">Zoom nos cortes e capítulos do YouTube</div></div>
+      <div class="card" data-aba="Ecad"><div class="ic">🎵</div><div class="t">ECAD</div><div class="d">Lista das trilhas usadas, pronta para o ECAD</div></div>
     </div>
   </div>
 
@@ -495,6 +497,18 @@
     <div class="dica">Divide o podcast por assunto, põe marcadores na sequência e escreve a lista para colar na descrição do YouTube. Usa a transcrição (se ainda não existir, o painel faz sozinho).</div>
     <div id="btnCapitulos" class="cartao"><div class="ico">📖</div><div class="tx"><div class="t1">CRIAR CAPÍTULOS</div><div class="t2">Marcadores na timeline e lista para copiar</div></div></div>
     <textarea id="capTexto" style="display:none"></textarea>
+  </div>
+
+  <!-- ECAD -->
+  <div id="Ecad" class="aba">
+    <h2>ECAD das trilhas</h2>
+    <div class="dica">Lista as trilhas (arquivos com código tipo BRPJ...) das faixas de áudio da sequência ativa, na ordem em que entram, com o tempo usado.</div>
+    <label for="ecadPasta">Pasta</label>
+    <input id="ecadPasta" type="text" value="A:\AVID_GLOOKAST\14_TERAPIA_DO_AMOR\PR DANILO\ECADs" />
+    <div id="btnEcadPasta" class="mini">Escolher pasta...</div>
+    <label for="ecadNome">Título do arquivo</label>
+    <input id="ecadNome" type="text" placeholder="Nome da sequência ativa" />
+    <div id="btnEcad" class="cartao"><div class="ico">🎵</div><div class="tx"><div class="t1">GERAR ECAD</div><div class="t2">Salva o .txt e abre</div></div></div>
   </div>
 
   <!-- AVANÇADO -->

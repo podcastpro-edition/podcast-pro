@@ -70,7 +70,7 @@ def parar_tudo():
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "2.0.3"
+VERSAO = "2.0.4"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -4097,6 +4097,17 @@ class Handler(BaseHTTPRequestHandler):
             caminho = corpo.get("path", "")
             if self.path == "/parar":
                 return self._responder({"ok": True, "encerrados": parar_tudo()})
+            if self.path == "/ecad/salvar":
+                destino = (corpo.get("caminho") or "").strip()
+                if not os.path.isabs(destino):
+                    return self._responder({"erro": "Pasta inválida: " + destino}, 400)
+                if not destino.lower().endswith(".txt"):
+                    destino += ".txt"
+                os.makedirs(os.path.dirname(destino), exist_ok=True)
+                with open(destino, "w", encoding="utf-8", newline="") as f:
+                    f.write(corpo.get("texto", ""))
+                os.startfile(destino)
+                return self._responder({"ok": True, "caminho": destino})
             if self.path == "/atualizacao/aplicar":
                 res = aplicar_atualizacao()
                 self._responder(res)
