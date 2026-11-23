@@ -1,8 +1,8 @@
 {
-  "versao": "1.0.120",
-  "notas": "Podcast: opcao de procurar tremidas fica visivel na aba (padrao: desligado, mais rapido)",
+  "versao": "1.0.121",
+  "notas": "Podcast: trilhas de audio identicas (esquerdo/direito) contam como uma so e as vozes sao separadas pelo timbre; registro do plano no log",
   "arquivos": {
-    "server.py": "acc98230062f7e094c07f869f1aa7ae5ff47fb4fb2d589cc6c8cae715bdd7e3d",
+    "server.py": "9adbfd302782a76c282d3a7b3436decc06846e40ce063b2b1995cdfa51a9fad4",
     "painel_index.html": "3648c172e25483ec05c10eebf52874040f09f9d2ff01d6e421a55310953bb971",
     "painel_main.js": "c4599e175cf9d595bc120dcdbbf3b828fd6aa9c7d7ee6a9458c30524c991a903",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",

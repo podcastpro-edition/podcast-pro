@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.120"
+VERSAO = "1.0.121"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -793,6 +793,20 @@ def avaliar_audios(faixas, cameras, pessoas, recorte=None):
             if i["tipo"] == "efeitos":
                 i["tipo"] = "fala"
         falas = [i for i in info if i["tipo"] == "fala"]
+    # trilhas idênticas (ex.: esquerdo e direito da mesma mistura) não são duas pessoas: fica só uma
+    unicas = []
+    for i in falas:
+        igual = False
+        for o in unicas:
+            a, b = envs[i["trilha"]][0], envs[o["trilha"]][0]
+            n_ = min(len(a), len(b))
+            if n_ > 20 and float(np.mean(np.abs(a[:n_] - b[:n_]))) < 1.0 and float(np.corrcoef(a[:n_], b[:n_])[0, 1]) > 0.98:
+                igual = True
+                i["tipo"] = "duplicada"
+                break
+        if not igual:
+            unicas.append(i)
+    falas = unicas
     master = None
     misturas = []
     if len(falas) >= 3:
@@ -1242,6 +1256,7 @@ def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
         trechos, tempo, alguem, janela = quem_fala(pessoas, wav, duracao_minima=duracao_minima, recorte=recorte)
     trechos = priorizar_apresentador(trechos, pessoas, apresentador, int(prioridade or 0))
     trechos = alternar_sem_imagem(trechos, pessoas, geral)
+    print("[podcast-pro] plano: pessoas=%s tempo=%s trechos=%d" % ([(p["nome"], p["camera"], p.get("canal")) for p in pessoas], {k: round(v) for k, v in tempo.items()}, len(trechos)))
 
     trocas_defeito, defeitos_achados = [], {}
     if corrigir_camera:
