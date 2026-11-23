@@ -70,7 +70,7 @@ def parar_tudo():
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.129"
+VERSAO = "2.0.0"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1638,7 +1638,7 @@ def alternar_sem_imagem(trechos, pessoas, geral, tempo=11.0):
 
 def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
                   cortar_silencios=False, faixas=None, apresentador=None, prioridade=0,
-                  trechos_prontos=None, recorte=None, corrigir_camera=None, modo="auto"):
+                  trechos_prontos=None, recorte=None, corrigir_camera=None, modo="auto", maximo=None):
     """Junta tudo: sincronia das câmeras, quem fala, silêncios a cortar.
     cameras: {"V1": caminho, ...}. Devolve o plano de montagem."""
     total = duracao_total(wav)
@@ -1671,11 +1671,14 @@ def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
         modo = "olhar" if len(cameras) > len(com_imagem) else "fala"
     if modo == "olhar":
         rec_o = _recorte_ok(recorte, total)
-        pelo_olhar = trechos_pelo_olhar(cameras, atraso, rec_o[0] if rec_o else 0.0, rec_o[1] if rec_o else total)
+        pelo_olhar = trechos_pelo_olhar(cameras, atraso, rec_o[0] if rec_o else 0.0, rec_o[1] if rec_o else total,
+                                        minimo=max(1.0, float(duracao_minima or 2.0)))
         if pelo_olhar:
             trechos = pelo_olhar
         else:
             print("[podcast-pro] olhar: nenhum rosto de frente encontrado; usando quem fala")
+    if maximo:
+        trechos = limitar_planos(trechos, geral, float(maximo), float(duracao_minima or 2.0))
     print("[podcast-pro] plano: pessoas=%s tempo=%s trechos=%d" % ([(p["nome"], p["camera"], p.get("canal")) for p in pessoas], {k: round(v) for k, v in tempo.items()}, len(trechos)))
 
     trocas_defeito, defeitos_achados = [], {}
@@ -1812,7 +1815,8 @@ def transcrever_palavras(audio, modelo, dispositivo, idioma):
         for w in (seg.words or []):
             texto = w.word.strip()
             if texto:
-                palavras.append({"w": texto, "s": round(w.start, 3), "e": round(w.end, 3)})
+                palavras.append({"w": texto, "s": round(w.start, 3), "e": round(w.end, 3),
+                                 "p": round(float(getattr(w, "probability", 1.0) or 1.0), 2)})
     return palavras
 
 
@@ -2327,16 +2331,20 @@ def _tempo_entrada(anim, n_linhas):
     return anim["duracao"] + anim["atraso"] * max(0, n_linhas - 1) + 0.05
 
 
-def _sprites_legenda(estilo, texto, W, H):
-    """Desenha cada linha da legenda numa imagem pequena transparente. Devolve [(imagem, cx, cy)]."""
+def _sprites_legenda(estilo, texto, W, H, destaque=None):
+    """Desenha cada linha da legenda numa imagem pequena transparente. Devolve [(imagem, cx, cy)].
+    destaque=(n, (r, g, b)): pinta a palavra n (contando do começo da legenda) com essa cor."""
     from PIL import Image, ImageDraw, ImageFilter
     camadas = _def_estilo(estilo)["linhas"]
     linhas = dividir_em_linhas(texto, len(camadas))
     linhas += [""] * (len(camadas) - len(linhas))
     saida = []
+    conta = 0  # palavras já desenhadas nas linhas anteriores
     for cam, txt in zip(camadas, linhas):
         if not txt:
             continue
+        n_ant = conta
+        conta += len(txt.split())
         if cam.get("caixa"):
             txt = txt.upper()
         tam = max(10, int(H * cam["tam"]))
@@ -2363,6 +2371,14 @@ def _sprites_legenda(estilo, texto, W, H):
         d = ImageDraw.Draw(base)
         d.text(centro, txt, font=fonte, fill=tuple(cam["cor"]) + (255,), anchor="mm",
                stroke_width=sw, stroke_fill=tuple(cont.get("cor", (0, 0, 0)))[:3] + (255,) if cont else None)
+        if destaque and n_ant <= destaque[0] < conta:  # a palavra falada agora, por cima, na cor de destaque
+            pal = txt.split()
+            k = destaque[0] - n_ant
+            esq = centro[0] - fonte.getlength(txt) / 2
+            x = esq + fonte.getlength(" ".join(pal[:k]) + (" " if k else ""))
+            d.text((x, centro[1]), pal[k], font=fonte, fill=tuple(int(c) for c in destaque[1])[:3] + (255,),
+                   anchor="lm", stroke_width=sw,
+                   stroke_fill=tuple(cont.get("cor", (0, 0, 0)))[:3] + (255,) if cont else None)
         img = Image.new("RGBA", (larg, alt), (0, 0, 0, 0))
         if tarja:
             bx = d.textbbox(centro, txt, font=fonte, anchor="mm", stroke_width=sw)
@@ -3059,7 +3075,7 @@ def limpar_overlays(em_uso, horas=24):
     return {"apagados": len(apagados)}
 
 
-def gerar_overlay(blocos, estilo, W, H, fps, saida, separado=False):
+def gerar_overlay(blocos, estilo, W, H, fps, saida, separado=False, destaque=None):
     """blocos: [(inicio, fim, texto)] em segundos (já em ordem). Gera UM vídeo .mov com transparência."""
     import tempfile
     anim_est = _def_estilo(estilo)["anim"]
@@ -3068,14 +3084,18 @@ def gerar_overlay(blocos, estilo, W, H, fps, saida, separado=False):
     pasta = tempfile.mkdtemp(prefix="ovl_")
     partes = []
     cursor = None  # quadro onde terminou a parte anterior
-    blocos = sorted(blocos)
+    blocos = sorted(blocos, key=lambda x: x[0])
+    tempos_de = {}
     # termina cada legenda antes da próxima começar
     ajust = []
-    for i, (a, b, tx) in enumerate(blocos):
+    for i, bl in enumerate(blocos):
+        a, b, tx = bl[0], bl[1], bl[2]
         if i + 1 < len(blocos):
             b = min(b, blocos[i + 1][0] - 1.0 / fps)
         if b - a >= 0.3:
             ajust.append((a, b, tx))
+            if len(bl) > 3 and bl[3] and destaque and len(bl[3]) == len(tx.split()):
+                tempos_de[len(ajust) - 1] = [float(x) for x in bl[3]]
     if not ajust:
         raise RuntimeError("Nenhuma legenda para desenhar.")
     t0 = ajust[0][0]
@@ -3092,19 +3112,29 @@ def gerar_overlay(blocos, estilo, W, H, fps, saida, separado=False):
         lista_sep = []
         for i, (a, b, tx) in enumerate(ajust):
             n = max(2, int(round((b - a) * fps)))
-            sp = _sprites_legenda(estilo, tx, W, H)
+            tempos = tempos_de.get(i)
+            sprites_j = {}
+
+            def sprites(j):  # j = palavra falada agora (-1 = nenhuma em destaque)
+                if j not in sprites_j:
+                    sprites_j[j] = _sprites_legenda(estilo, tx, W, H, (j, destaque) if (tempos and j >= 0) else None)
+                return sprites_j[j]
             arq = os.path.join(pasta_sep, "leg%05d_%s.mov" % (i + 1, os.path.basename(saida)[8:-4]))
             p = subprocess.Popen(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba",
                                   "-s", "%dx%d" % (W, H), "-r", str(fps), "-i", "-"] + enc + [arq], stdin=subprocess.PIPE)
             dur = n / fps
-            estatico = None
-            t_ent = _tempo_entrada(anim_est, len(sp))
+            estatico = {}
+            t_ent = _tempo_entrada(anim_est, len(sprites(-1)))
             for k in range(n):
                 t = k / fps
+                j = -1
+                if tempos:
+                    j = max([q for q, s0 in enumerate(tempos) if s0 <= t] or [0])
+                sp = sprites(j)
                 if t_ent < t < dur - 0.2:
-                    if estatico is None:
-                        estatico = _quadro_legenda(sp, W, H, 99.0, 1e6, anim_est).tobytes()
-                    p.stdin.write(estatico)
+                    if j not in estatico:
+                        estatico[j] = _quadro_legenda(sp, W, H, 99.0, 1e6, anim_est).tobytes()
+                    p.stdin.write(estatico[j])
                 else:
                     p.stdin.write(_quadro_legenda(sp, W, H, t, dur, anim_est).tobytes())
             p.stdin.close()
@@ -3183,7 +3213,7 @@ def dividir_em_linhas(texto, n):
 
 
 def legendas_estilizadas(wav, inicio, fim, modo, estilo, pasta_saida, enxuto, semente,
-                         cache=None, prefixo="", overlay=True):
+                         cache=None, prefixo="", overlay=True, dicionario=None):
     import random
 
     cache = cache or (os.path.splitext(wav)[0] + "_palavras.json")
@@ -3202,9 +3232,14 @@ def legendas_estilizadas(wav, inicio, fim, modo, estilo, pasta_saida, enxuto, se
     saida = []
     for i, (ini, fi, texto) in enumerate(blocos):
         texto = re.sub(r"(\w) -(\w)", r"\1-\2", texto)  # "Bem -vindos" -> "Bem-vindos"
+        texto = aplicar_dicionario(texto, dicionario)
         est = sorteio.choice(nomes) if estilo == "aleatorio" else estilo
         if (est in MODELOS_PROJETO or est in estilos_usuario()) and overlay:  # desenhado pelo programa (um vídeo transparente só)
-            saida.append({"ini": ini, "fim": fi, "texto": texto, "estilo": est, "tipo": "overlay"})
+            tempos_ov = [round(max(0.0, p["s"] - ini), 3) for p in palavras
+                         if ini - 0.01 <= p["s"] < fi and not p["w"].startswith("-")]
+            duvida = any(p.get("p", 1.0) < 0.55 for p in palavras if ini - 0.01 <= p["s"] < fi)
+            saida.append({"ini": ini, "fim": fi, "texto": texto, "estilo": est, "tipo": "overlay", "tempos": tempos_ov,
+                          "duvida": duvida})
             continue
         if est in MODELOS_PROJETO:  # modelo artístico guardado em projeto do Premiere
             cfg = MODELOS_PROJETO[est]
@@ -3285,7 +3320,7 @@ avaliar_audios = com_cache(avaliar_audios)
 plano_podcast = com_cache(plano_podcast)
 
 
-def crops_vertical(cameras, geral, pecas):
+def crops_vertical(cameras, geral, pecas, seguir="parado"):
     """Só procura os rostos. pecas: [{"arq": {"V1": [ini, fim], ...}}] (tempos DENTRO de cada arquivo de vídeo).
     Os cortes já existem na sequência; aqui se decide apenas o enquadramento vertical de cada câmera."""
     import numpy as np
@@ -3316,6 +3351,26 @@ def crops_vertical(cameras, geral, pecas):
                 cx, cy, fh = ultimo.get(cam, (0.5, 0.4, 0.2))
                 n = 0
             crops[cam] = {"largura": W, "altura": H, "cx": cx, "cy": cy, "fh": fh, "rostos": n}
+            janela = {"lento": 2.5, "normal": 1.2, "rapido": 0.6}.get(seguir)
+            if janela and cam != geral:
+                pts = []
+                for t_abs, faces in amostras:
+                    if faces:
+                        f = max(faces, key=lambda f: f[2] * f[3])
+                        pts.append((t_abs - a, f[0], f[1]))
+                traj = []
+                if len(pts) >= 3:
+                    ts = np.array([q[0] for q in pts])
+                    xs = np.array([q[1] for q in pts])
+                    ys = np.array([q[2] for q in pts])
+                    for t0 in ts:
+                        sel = np.abs(ts - t0) <= janela / 2
+                        x, y = float(np.median(xs[sel])), float(np.median(ys[sel]))
+                        if not traj or abs(x - traj[-1][1]) > 0.02 or abs(y - traj[-1][2]) > 0.02:
+                            if not traj or t0 - traj[-1][0] >= 0.5:
+                                traj.append((round(float(t0), 3), round(x, 4), round(y, 4)))
+                if len(traj) >= 2:
+                    crops[cam]["traj"] = traj
         saida.append(crops)
     return {"crops": saida}
 
@@ -3720,6 +3775,157 @@ def trechos_virais(wav, dmin=20.0, dmax=60.0, quantidade=8, recorte=None):
 
 # --------------------------------------------------------------------- HTTP
 
+
+# ------------------------------------------------------------- V2: ritmo dos cortes
+
+def limitar_planos(trechos, geral, maximo, minimo=2.0):
+    """Plano que passa da duração máxima ganha uma passagem pela câmera geral (como um plano de reação).
+    Ex.: máximo 10 s e uma fala de 25 s na câmera da pessoa -> 10 s nela, ~3 s na geral, 10 s nela..."""
+    if not maximo or maximo <= 0 or not geral:
+        return trechos
+    ins = max(1.0, min(3.0, maximo / 3.0, minimo * 1.5))
+    out = []
+    for k, t in enumerate(trechos):
+        cam = t.get("camera") or geral
+        ini, fim = float(t["ini"]), float(t["fim"])
+        if fim - ini <= maximo:
+            out.append(t)
+            continue
+        outra = geral
+        if cam == geral:  # plano longo na geral: passa pela câmera de quem falou por último (ou fala a seguir)
+            viz = [x.get("camera") for x in trechos[k - 1::-1] if k] + [x.get("camera") for x in trechos[k + 1:]]
+            outra = next((c for c in viz if c and c != geral), None)
+            if not outra:
+                out.append(t)
+                continue
+        x = ini
+        while fim - x > maximo:
+            a = x + maximo
+            b = a + ins
+            if fim - b < minimo:  # sobraria um pedaço curto demais: puxa a passagem pela geral para trás
+                a = fim - minimo - ins
+                b = a + ins
+                if a - x < minimo:
+                    break
+            out.append(dict(t, ini=x, fim=a))
+            out.append(dict(t, ini=a, fim=b, camera=outra))
+            x = b
+        out.append(dict(t, ini=x, fim=fim))
+    return out
+
+
+# ------------------------------------------------------------- V2: dicionário das legendas
+
+def aplicar_dicionario(texto, pares):
+    """pares: [[errado, certo], ...]. Troca palavras/expressões inteiras, sem diferenciar maiúsculas."""
+    for par in pares or []:
+        try:
+            de, para = str(par[0]).strip(), str(par[1]).strip()
+        except Exception:
+            continue
+        if not de:
+            continue
+        texto = re.sub(r"(?<!\w)" + re.escape(de) + r"(?!\w)", para, texto, flags=re.IGNORECASE)
+    return re.sub(r"\s{2,}", " ", texto).strip()
+
+
+# ------------------------------------------------------------- V2: capítulos do YouTube
+
+_VAZIAS = set("""a o as os um uma uns umas de do da dos das em no na nos nas por pelo pela pelos pelas para pra pro com sem
+e ou mas que se como quando onde porque porquê então entao já ja não nao sim é e era foi ser estar está esta estava tem ter
+tinha há ha isso isto aquilo esse essa este esta aquele aquela eles elas ele ela eu tu você voce vocês voces nós nos me te
+lhe meu minha seu sua nosso nossa dele dela muito muita mais menos bem tudo todo toda todos todas aqui ali lá la aí ai
+assim também tambem só so ao aos à às até ate sobre entre depois antes ainda vai vou vamos tá ta né ne gente coisa coisas
+porque pois daí dai então tipo cara hoje dia dias vez vezes fazer faz fez sabe sei saber quer querer pode poder vai ir
+""".split())
+
+
+def _frases_das_palavras(palavras, pausa=0.7):
+    frases, atual = [], []
+    for p in palavras:
+        if atual and (p["s"] - atual[-1]["e"] > pausa):
+            frases.append(atual)
+            atual = []
+        atual.append(p)
+        if re.search(r"[.!?]$", p["w"]):
+            frases.append(atual)
+            atual = []
+    if atual:
+        frases.append(atual)
+    return frases
+
+
+def capitulos(wav, recorte=None, minimo=60.0):
+    """Divide o podcast em capítulos por mudança de assunto (sentido das frases) e dá um título curto a cada um.
+    Devolve {"capitulos": [{"ini", "titulo", "texto"}]} em tempo do arquivo de áudio."""
+    import numpy as np
+    cache = os.path.splitext(wav)[0] + "_palavras.json"
+    if not os.path.isfile(cache):
+        raise RuntimeError("Falta a transcrição do podcast. Na aba Legendas, clique em "
+                           "'Transcrever o podcast (por palavra)' (só precisa fazer uma vez).")
+    with open(cache, encoding="utf-8") as f:
+        palavras = json.load(f)
+    rec = _recorte_ok(recorte, palavras[-1]["e"] if palavras else 0)
+    if rec:
+        palavras = [p for p in palavras if rec[0] <= p["s"] < rec[1]]
+    frases = _frases_das_palavras(palavras)
+    if len(frases) < 8:
+        raise RuntimeError("Fala curta demais para dividir em capítulos.")
+    ini_total, fim_total = frases[0][0]["s"], frases[-1][-1]["e"]
+    dur = fim_total - ini_total
+    textos = [" ".join(x["w"] for x in fr) for fr in frases]
+    t_fr = [fr[0]["s"] for fr in frases]
+    # quanto o assunto muda em cada frase: compara as frases de antes com as de depois
+    cortes_cand = []
+    try:
+        from fastembed import TextEmbedding
+        if _EMB["modelo"] is None:
+            _EMB["modelo"] = TextEmbedding("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+                                           cache_dir=os.path.join(_RAIZ, "modelos"))
+        vet = np.array(list(_EMB["modelo"].embed(textos)))
+        vet = vet / (np.linalg.norm(vet, axis=1, keepdims=True) + 1e-9)
+        jan = 6
+        for i in range(jan, len(frases) - jan):
+            a = vet[i - jan:i].mean(axis=0)
+            b = vet[i:i + jan].mean(axis=0)
+            sim = float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
+            pausa = frases[i][0]["s"] - frases[i - 1][-1]["e"]
+            cortes_cand.append((1.0 - sim + min(0.15, pausa * 0.05), i))
+    except Exception as e:
+        print("[podcast-pro] capítulos sem sentido (fastembed):", e)
+        for i in range(1, len(frases)):  # sem o modelo: usa as pausas mais longas
+            cortes_cand.append((frases[i][0]["s"] - frases[i - 1][-1]["e"], i))
+    alvo = max(1, min(15, int(round(dur / 240.0))))  # ~1 capítulo a cada 4 min
+    escolhidos = []
+    for nota, i in sorted(cortes_cand, reverse=True):
+        t = t_fr[i]
+        if t - ini_total < minimo or fim_total - t < minimo:
+            continue
+        if any(abs(t - t_fr[j]) < minimo for j in escolhidos):
+            continue
+        escolhidos.append(i)
+        if len(escolhidos) >= alvo:
+            break
+    limites = [0] + sorted(escolhidos) + [len(frases)]
+    grupos = [" ".join(textos[limites[k]:limites[k + 1]]) for k in range(len(limites) - 1)]
+
+    def termos(tx):
+        return [w for w in re.findall(r"[a-záàâãéêíóôõúç]{4,}", tx.lower()) if w not in _VAZIAS]
+    from collections import Counter
+    cont = [Counter(termos(g)) for g in grupos]
+    df = Counter(w for c in cont for w in c)
+    caps = []
+    for k, c in enumerate(cont):
+        pont = {w: n * (1.0 + np.log((1 + len(cont)) / (1 + df[w]))) for w, n in c.items()}
+        top = [w for w, _ in sorted(pont.items(), key=lambda x: -x[1])[:2]]
+        titulo = (" e ".join(top) if top else "Parte %d" % (k + 1)).capitalize()
+        if k == 0:
+            titulo = "Introdução" + (": " + top[0] if top else "")
+        ini = t_fr[limites[k]] if k else ini_total
+        caps.append({"ini": round(ini, 2), "titulo": titulo, "texto": grupos[k][:160]})
+    return {"capitulos": caps, "duracao": dur}
+
+
 class Handler(BaseHTTPRequestHandler):
     def _cabecalhos(self, status=200):
         self.send_response(status)
@@ -3843,11 +4049,11 @@ class Handler(BaseHTTPRequestHandler):
                 import time
                 pasta_ov = os.path.join(_RAIZ, "cache", "overlays")
                 nome_ov = "overlay_%s_%d.mov" % (re.sub(r"\W", "", corpo.get("estilo", "x")), int(time.time()))
-                blocos = [(float(b["a"]), float(b["b"]), str(b["texto"])) for b in corpo["blocos"]]
+                blocos = [(float(b["a"]), float(b["b"]), str(b["texto"]), b.get("t")) for b in corpo["blocos"]]
                 return self._responder(gerar_overlay(blocos, corpo.get("estilo"), corpo.get("w", 1920),
                                                      corpo.get("h", 1080), corpo.get("fps", 30),
                                                      os.path.join(pasta_ov, nome_ov),
-                                                     bool(corpo.get("separado", False))))
+                                                     bool(corpo.get("separado", False)), corpo.get("destaque")))
 
             if self.path == "/criativo/previa":
                 try:
@@ -4042,18 +4248,25 @@ class Handler(BaseHTTPRequestHandler):
                     caminho, float(corpo.get("inicio", 0)), float(corpo.get("fim", 1e9)),
                     corpo.get("modo", "curtas"), corpo.get("estilo", "aleatorio"),
                     os.path.normpath(pasta), bool(corpo.get("enxuto", False)),
-                    corpo.get("semente", 1), corpo.get("cache"), corpo.get("prefixo", ""))})
+                    corpo.get("semente", 1), corpo.get("cache"), corpo.get("prefixo", ""),
+                    dicionario=corpo.get("dicionario"))})
 
             if self.path == "/virais":
                 try:
                     return self._responder(trechos_virais(caminho, float(corpo.get("min", 20)), float(corpo.get("max", 60)), int(corpo.get("quantidade", 8)), corpo.get("recorte")))
                 except Exception as e:
                     return self._responder({"erro": str(e)}, 400)
+            if self.path == "/capitulos":
+                try:
+                    return self._responder(capitulos(caminho, corpo.get("recorte")))
+                except Exception as e:
+                    return self._responder({"erro": str(e)}, 400)
             if self.path == "/crops_vertical":
                 for nome_c, o in corpo["cameras"].items():
                     if not isinstance(o, str) or not os.path.isfile(o):
                         return self._responder({"erro": f"arquivo da câmera {nome_c} não encontrado: {o!r}"}, 400)
-                return self._responder(crops_vertical(corpo["cameras"], corpo.get("geral", "V1"), corpo["pecas"]))
+                return self._responder(crops_vertical(corpo["cameras"], corpo.get("geral", "V1"), corpo["pecas"],
+                                                      corpo.get("seguir", "parado")))
             if self.path == "/plano_vertical":
                 for o in corpo["cameras"].values():
                     if not os.path.isfile(o):
@@ -4074,7 +4287,7 @@ class Handler(BaseHTTPRequestHandler):
                     bool(corpo.get("cortarSilencios", False)), corpo.get("faixas"),
                     corpo.get("apresentadores") or corpo.get("apresentador"), int(corpo.get("prioridade", 0)),
                     corpo.get("trechosProntos"), corpo.get("recorte"), corpo.get("corrigirCamera"),
-                    corpo.get("modo", "auto")))
+                    corpo.get("modo", "auto"), corpo.get("duracaoMaxima")))
 
             if self.path == "/buscar":
                 return self._responder(buscar_trechos(

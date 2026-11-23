@@ -1259,6 +1259,7 @@ async function montarPodcastInterno(limite, opcoes = {}) {
       pessoas: PODCAST.pessoas.map((p) => ({ nome: p.nome, canal: p.canal, camera: p.camera, semImagem: !!p.semImagem })),
       geral: PODCAST.geral, apresentadores: PODCAST.apresentadores, prioridade: PODCAST.prioridade,
       minimo: lerNumero("minimo"), respiro: lerNumero("respiro"),
+      duracaoMinima: lerRitmo().min, duracaoMaxima: lerRitmo().max || null,
       cortarSilencios: PODCAST.cortarSilencios,
       faixas: opcoes.faixas || null,
       trechosProntos, recorte,
@@ -1432,7 +1433,9 @@ async function montarPodcastInterno(limite, opcoes = {}) {
 }
 
 // ---- Pop-up simples dentro do painel (aparece no topo da aba Podcast) ----
-function popup(titulo, texto, botoes) {
+let POPUP_INFO = false;
+function popup(titulo, texto, botoes, info) {
+  POPUP_INFO = !!info;
   $("popTitulo").textContent = titulo;
   $("popTexto").textContent = texto;
   const area = $("popBotoes");
@@ -1447,7 +1450,7 @@ function popup(titulo, texto, botoes) {
   // a pergunta aparece SEMPRE logo abaixo da barra do topo, em qualquer aba (antes ficava escondida na aba Podcast)
   try { const c = $("carregando"), pp = $("popup"); if (c && c.parentNode && pp) c.parentNode.insertBefore(pp, c.nextSibling); } catch (e) { /* segue */ }
   $("popup").style.display = "block";
-  try { mostrar("Preciso da sua resposta: veja a pergunta aqui em cima ↑"); } catch (e) { /* segue */ }
+  if (!info) { try { mostrar("Preciso da sua resposta: veja a pergunta aqui em cima ↑"); } catch (e) { /* segue */ } }
   try { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; } catch (e) { /* segue */ }
 }
 
@@ -1471,7 +1474,7 @@ async function fluxoPodcastCompleto() {
     const ppro = require("premierepro");
     const projeto = await ppro.Project.getActiveProject();
     const origem = await projeto.getActiveSequence();
-    if (!origem) return popup("Nenhuma sequência aberta", "Abra a sequência com as câmeras e o áudio dos microfones e clique de novo.", [{ rotulo: "Entendi" }]);
+    if (!origem) return popup("Nenhuma sequência aberta", "Abra a sequência com as câmeras e o áudio dos microfones e clique de novo.", [{ rotulo: "Entendi" }], true);
 
     // ajusta sozinho as caixas ao que a sequência tem (sem perguntar)
     const ajustou = await ajustarAoSequencia(origem);
@@ -1483,7 +1486,7 @@ async function fluxoPodcastCompleto() {
     if (cams.length < 2) {
       return popup("Não há câmeras para cortar",
         "Só uma câmera foi escolhida (" + cams.join(", ") + "), então não existe troca de câmera a fazer. Em \"Selecionar participantes e apresentador\", escolha um vídeo diferente para cada pessoa.",
-        [{ rotulo: "Abrir participantes e apresentador", cor: "azul", acao: abrirParticipantes }, { rotulo: "Fechar" }]);
+        [{ rotulo: "Abrir participantes e apresentador", cor: "azul", acao: abrirParticipantes }, { rotulo: "Fechar" }], true);
     }
 
     // PASSO 1: sincronia
@@ -1502,7 +1505,7 @@ async function fluxoPodcastCompleto() {
         mostrar("Parei: a sequência aberta não bate com as trilhas escolhidas.");
         return popup("A sequência aberta não bate com as trilhas escolhidas",
           "A sequência ativa" + (nome ? " (" + nome + ")" : "") + " tem " + nV + " trilha(s) de vídeo e " + nA + " de áudio, mas as caixas pedem: " + m.split("trilhas:")[1].split(".")[0].trim() + ". Abra a sequência original do podcast (a que tem as câmeras e os microfones) ou ajuste os números V e A em \"Selecionar participantes e apresentador\".",
-          [{ rotulo: "Ajustar participantes e apresentador", cor: "azul", acao: abrirParticipantes }, { rotulo: "Fechar" }]);
+          [{ rotulo: "Ajustar participantes e apresentador", cor: "azul", acao: abrirParticipantes }, { rotulo: "Fechar" }], true);
       }
       throw e;
     }
@@ -1523,7 +1526,7 @@ async function fluxoPodcastCompleto() {
 
     popup("Cortes prontos",
       resumoSync + " Os cortes foram feitos automaticamente. Quer refinar mais? Em \"Selecionar participantes e apresentador\" você muda quem é apresentador e quanto a imagem dele é priorizada; depois clique em \"Montar podcast completo\" de novo.",
-      [{ rotulo: "Refinar cortes", cor: "azul", acao: abrirParticipantes }, { rotulo: "Está bom assim", cor: "verde" }]);
+      [{ rotulo: "Refinar cortes", cor: "azul", acao: abrirParticipantes }, { rotulo: "Está bom assim", cor: "verde" }], true);
   } catch (e) {
     if (e === PARAR_FLUXO) mostrar(e.message); else mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
   } finally {
@@ -1766,7 +1769,7 @@ const legendar = (modo) => () => semPressa(async () => {
       try {
         r = await chamar("/legendas_estilizadas", {
           path: arquivo, cache: t.cache, inicio: fonteA, fim: fonteB, modo: "blocos",
-          estilo: ESTILO, enxuto: true, semente: 7, prefixo: "c" + k + "_",
+          estilo: ESTILO, enxuto: true, semente: 7, prefixo: "c" + k + "_", dicionario: lerDicionario(),
         });
       } catch (e) {
         if (/Não há falas/.test(String(e && e.message))) continue;
@@ -1787,6 +1790,11 @@ const legendar = (modo) => () => semPressa(async () => {
 
     // ---- estilos Criativo: o programa desenha TODAS as legendas num único vídeo transparente
     if (todas.every((l) => l.tipo === "overlay")) {
+      if (($("legRevisar") && $("legRevisar").value) !== "0") {
+        etapa = "revisar o texto";
+        const ok = await revisarLegendas(todas);
+        if (!ok) return mostrar("Legendas canceladas. Nada foi criado.");
+      }
       etapa = "desenhar as legendas";
       const base = todas[0].seqIni;
       let LARG = 1920, ALT = 1080, FPS = 30;
@@ -1795,8 +1803,8 @@ const legendar = (modo) => () => semPressa(async () => {
         "Isso pode levar alguns minutos. Não feche o Premiere.");
       const ov = await chamar("/legendas_overlay", {
         estilo: ESTILO, w: LARG, h: ALT, fps: FPS,
-        separado: true,
-        blocos: todas.map((l) => ({ a: l.seqIni - base, b: l.seqFim - base, texto: l.texto })),
+        separado: true, destaque: corDestaque(),
+        blocos: todas.map((l) => ({ a: l.seqIni - base, b: l.seqFim - base, texto: l.texto, t: l.tempos || null })),
       });
       etapa = "importar as legendas";
       mostrar("Colocando " + ov.itens.length + " legendas na trilha V" + (iv + 1) + "...");
@@ -2099,10 +2107,12 @@ $("btnSondaVertical").addEventListener("click", () => semPressa(async () => {
 
 
 // --- Recorte vertical 9:16: monta a sequência e enquadra o rosto de quem fala ---
+const KF_FONTE = true; // pontos de movimento no tempo da mídia de origem do clipe
 async function fluxoVertical(modo, janela) { // modo: "seq" (tudo), "inout" (pontos In/Out) ou "janela" ({ini,fim} em tempo da sequência)
   let etapa = "começando";
   let INICIO = 0, FIM = 0;
-  const LARG = 1080, ALT = 1920;
+  const { LARG, ALT } = formatoVertical();
+  const SEGUIR = ($("vSeguir") && $("vSeguir").value) || "parado";
   const avisos = [];
   try {
     const ppro = require("premierepro");
@@ -2186,7 +2196,7 @@ async function fluxoVertical(modo, janela) { // modo: "seq" (tudo), "inout" (pon
     etapa = "procurar os rostos";
     for (const [c, caminho] of Object.entries(cameras)) { if (!caminho || caminho === "undefined" || caminho === "null") throw new Error("o Premiere não me deu o caminho do arquivo da câmera " + c + " (veio: " + JSON.stringify(caminho) + ")"); }
     const rr = await comRelogio("Procurando os rostos para enquadrar (" + pecas.length + " trechos)...\n(só isso é calculado; os cortes já feitos são reaproveitados)", () => chamar("/crops_vertical", {
-      path: Object.values(cameras)[0], cameras, geral: PODCAST.geral, pecas: pecas.map((p) => ({ arq: p.arq })),
+      path: Object.values(cameras)[0], cameras, geral: PODCAST.geral, pecas: pecas.map((p) => ({ arq: p.arq })), seguir: SEGUIR,
     }));
     pecas.forEach((p, i) => { p.crops = rr.crops[i]; });
 
@@ -2203,7 +2213,7 @@ async function fluxoVertical(modo, janela) { // modo: "seq" (tudo), "inout" (pon
     for (const [nome, caminho] of Object.entries(cameras)) await garantirClipe(nome, caminho);
 
     const hora = new Date();
-    const nome = "VERTICAL " + String(hora.getHours()).padStart(2, "0") + "h" + String(hora.getMinutes()).padStart(2, "0");
+    const nome = "VERTICAL " + (LARG === ALT ? "1x1 " : LARG * 5 === ALT * 4 ? "4x5 " : "") + String(hora.getHours()).padStart(2, "0") + "h" + String(hora.getMinutes()).padStart(2, "0");
     let sequencia = null, editor = null;
     const usados = new Set();
     const trilhas = {};
@@ -2320,10 +2330,24 @@ async function fluxoVertical(modo, janela) { // modo: "seq" (tudo), "inout" (pon
         const posY = 0.5 + ((0.5 - cy) * H * s) / ALT;
         const cadeia = await q[i].getComponentChain();
         const mov = cadeia.getComponentAtIndex(1);
-        trabalhos.push({ posicao: mov.getParam(0), escala: mov.getParam(1), posX, posY, escalaPct: s * 100 });
+        const w = { posicao: mov.getParam(0), escala: mov.getParam(1), posX, posY, escalaPct: s * 100, kfs: [] };
+        // acompanhar o rosto: um ponto de posição a cada mudança de lugar do rosto (só na câmera ativa do trecho)
+        if (c.traj && c.traj.length >= 2 && pecas[i].camera === cam && cam !== PODCAST.geral) {
+          for (const [tr, tx, ty] of c.traj) {
+            const kx = Math.min(Math.max(tx, janL / 2), 1 - janL / 2);
+            const ky = Math.min(Math.max(ty + 0.12 * janA, janA / 2), 1 - janA / 2);
+            w.kfs.push({ t: await ppro.TickTime.createWithSeconds((KF_FONTE ? p.arq[cam][0] : 0) + tr),
+              x: 0.5 + ((0.5 - kx) * W * s) / LARG, y: 0.5 + ((0.5 - ky) * H * s) / ALT });
+          }
+        }
+        trabalhos.push(w);
         if (pecas[i].camera === cam) resumo.push((i + 1) + ": " + cam + " " + p.a.toFixed(1) + "-" + p.b.toFixed(1) + " rosto " + c.rostos + " x=" + cx.toFixed(2) + " esc=" + (s * 100).toFixed(0) + "%");
       }
     }
+    const comMov = trabalhos.filter((w) => w.kfs.length);
+    const kfPossivel = comMov.length > 0 && typeof comMov[0].posicao.createAddKeyframeAction === "function" &&
+      typeof comMov[0].posicao.createSetTimeVaryingAction === "function";
+    if (comMov.length && !kfPossivel) avisos.push("esta versão do Premiere não deixou o plugin animar a posição: o enquadramento ficou fixo em cada corte");
     for (let k = 0; k < trabalhos.length; k += 8) {
       const lote = trabalhos.slice(k, k + 8);
       projeto.lockedAccess(() => {
@@ -2337,7 +2361,32 @@ async function fluxoVertical(modo, janela) { // modo: "seq" (tudo), "inout" (pon
       await dormir(600);
     }
 
-    mostrar("Pronto: sequência " + nome + " (" + LARG + "x" + ALT + "), " + pecas.length + " trechos x 3 câmeras, " + (FIM - INICIO).toFixed(0) + " s.\n" +
+    // movimento: pontos de posição que acompanham o rosto (passo à parte; se falhar, fica o enquadramento fixo)
+    let movOk = 0;
+    if (comMov.length && kfPossivel) {
+      mostrar("Fazendo o enquadramento acompanhar o rosto (" + comMov.length + " trechos)...");
+      for (const w of comMov) {
+        try {
+          projeto.lockedAccess(() => {
+            projeto.executeTransaction((composto) => {
+              composto.addAction(w.posicao.createSetTimeVaryingAction(true));
+              for (const k of w.kfs) {
+                const kf = w.posicao.createKeyframe(new ppro.PointF(k.x, k.y));
+                kf.position = k.t;
+                composto.addAction(w.posicao.createAddKeyframeAction(kf));
+              }
+            }, "Vertical: acompanhar rosto");
+          });
+          movOk++;
+        } catch (e) {
+          avisos.push("não consegui animar o enquadramento (" + (e && e.message ? e.message : e) + "): ficou fixo");
+          break;
+        }
+        await dormir(150);
+      }
+    }
+    mostrar("Pronto: sequência " + nome + " (" + LARG + "x" + ALT + "), " + pecas.length + " trechos x " + camerasOrdem.length + " câmeras, " + (FIM - INICIO).toFixed(0) + " s." +
+      (movOk ? " O enquadramento acompanha o rosto em " + movOk + " trechos (" + SEGUIR + ")." : "") + "\n" +
       (avisos.length ? "AVISOS:\n- " + avisos.join("\n- ") + "\n" : "") + resumo.slice(0, 12).join("\n"));
   } catch (e) {
     mostrar((avisos.length ? "Avisos:\n- " + avisos.join("\n- ") + "\n\n" : "") + "Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
@@ -2929,7 +2978,7 @@ $("menuAvTec").addEventListener("click", () => {
 
 // --- Abas do painel ---------------------------------------------------------
 (function () {
-  const abas = ["Podcast", "Legendas", "Criativos", "Vertical", "Virais", "Silencios", "Buscar", "Avancado"];
+  const abas = ["Inicio", "Podcast", "Legendas", "Criativos", "Vertical", "Virais", "Silencios", "Buscar", "Extras", "Avancado"];
   const comTrecho = new Set([]);
   function abrir(nome) {
     abas.forEach((a) => {
@@ -2940,10 +2989,12 @@ $("menuAvTec").addEventListener("click", () => {
     });
     const bloco = $("blocoTrecho");
     if (bloco) bloco.style.display = comTrecho.has(nome) ? "block" : "none";
+    if (POPUP_INFO) { try { $("popup").style.display = "none"; } catch (e) { /* segue */ } POPUP_INFO = false; }
     try { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; } catch (e) { /* segue */ } // aba nova começa no topo
   }
   abas.forEach((a) => { const b = $("aba" + a); if (b) b.addEventListener("click", () => abrir(a)); });
-  abrir("Podcast");
+  window.abrirAba = abrir;
+  abrir("Inicio");
 })();
 
 
@@ -3045,7 +3096,7 @@ async function atualizarSobre() {
     versaoServ = d.versao || "antiga";
     servidor = versaoServ;
   } catch (e) { /* servidor desligado */ }
-  const linhas = ["PODCAST PRO V1", "Painel: versão " + VERSAO_PAINEL, "Programa local: versão " + servidor];
+  const linhas = ["PODCAST PRO V2", "Painel: versão " + VERSAO_PAINEL, "Programa local: versão " + servidor];
   if (versaoServ && versaoServ !== VERSAO_PAINEL) linhas.push("Atenção: as versões são diferentes. Rode o instalador mais novo e clique em \"Aplicar atualização\".");
   const caixa = $("sobreTexto");
   caixa.innerHTML = "";
@@ -4575,3 +4626,271 @@ $("btnTesteModelo").addEventListener("click", async () => {
   // estilos já criados aparecem na galeria ao abrir o painel
   (async function () { try { await recarregarEstilos(); } catch (e) { /* programa local ainda iniciando */ } })();
 })();
+
+
+// =====================================================================================
+// ---- V2 -----------------------------------------------------------------------------
+// =====================================================================================
+
+// guarda/lê escolhas simples deste computador
+const guardar = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* sem armazenamento */ } };
+const lerGuardado = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+
+// ---- Tela inicial: cada cartão abre a aba dele
+(function () {
+  Array.from(document.querySelectorAll("#Inicio .card")).forEach((c) => {
+    c.addEventListener("click", () => { if (window.abrirAba) window.abrirAba(c.getAttribute("data-aba")); });
+  });
+})();
+
+// ---- Podcast: ritmo dos cortes (duração mínima e máxima dos planos)
+const RITMOS = {
+  natural: { min: 2.0, max: 0 },
+  calmo: { min: 4.0, max: 25 },
+  ritmado: { min: 2.5, max: 12 },
+  energetico: { min: 1.5, max: 7 },
+  hiperativo: { min: 1.0, max: 4 },
+};
+function lerRitmo() {
+  const v = ($("pRitmo") && $("pRitmo").value) || "natural";
+  return RITMOS[v] || RITMOS.natural;
+}
+(function () {
+  const s = $("pRitmo");
+  if (!s) return;
+  const g = lerGuardado("ppRitmo");
+  if (g && RITMOS[g]) s.value = g;
+  s.addEventListener("change", () => guardar("ppRitmo", s.value));
+})();
+
+// ---- Legendas: dicionário, cor da palavra falada e revisão do texto antes de criar
+function lerDicionario() {
+  const t = ($("dicLeg") && $("dicLeg").value) || "";
+  return t.split(/\r?\n/).map((l) => l.split("=")).filter((p) => p.length >= 2 && p[0].trim())
+    .map((p) => [p[0].trim(), p.slice(1).join("=").trim()]);
+}
+(function () {
+  const d = $("dicLeg");
+  if (d) {
+    const g = lerGuardado("ppDicionario");
+    if (g !== null) d.value = g;
+    d.addEventListener("input", () => guardar("ppDicionario", d.value));
+  }
+  for (const id of ["legDestaque", "legRevisar"]) {
+    const s = $(id);
+    if (!s) continue;
+    const g = lerGuardado("pp_" + id);
+    if (g !== null) s.value = g;
+    s.addEventListener("change", () => guardar("pp_" + id, s.value));
+  }
+})();
+function corDestaque() {
+  const v = ($("legDestaque") && $("legDestaque").value) || "";
+  return v ? v.split(",").map(Number) : null;
+}
+const tc = (s) => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
+
+let REVISAO_ATUAL = null;
+if ($("btnRevOk")) $("btnRevOk").addEventListener("click", () => { if (REVISAO_ATUAL) REVISAO_ATUAL(true); });
+if ($("btnRevCancelar")) $("btnRevCancelar").addEventListener("click", () => { if (REVISAO_ATUAL) REVISAO_ATUAL(false); });
+// mostra todas as frases para corrigir; devolve true (criar) ou false (cancelar)
+function revisarLegendas(todas) {
+  return new Promise((resolve) => {
+    const caixa = $("revisao"), lista = $("listaRev");
+    if (!caixa || !lista) return resolve(true);
+    while (lista.firstChild) lista.removeChild(lista.firstChild);
+    const campos = [];
+    todas.forEach((l) => {
+      const lin = document.createElement("div"); lin.className = "lin";
+      const t = document.createElement("div"); t.className = "tc"; t.textContent = tc(l.seqIni);
+      t.title = "Ir até aqui na timeline";
+      t.addEventListener("click", async () => {
+        try { const ppro = require("premierepro"); const p = await ppro.Project.getActiveProject(); const s = await p.getActiveSequence(); await s.setPlayerPosition(await ppro.TickTime.createWithSeconds(l.seqIni)); } catch (e) { /* segue */ }
+      });
+      const tx = document.createElement("textarea"); tx.rows = 1; tx.value = l.texto;
+      if (l.duvida) tx.className = "duvida";
+      lin.appendChild(t); lin.appendChild(tx); lista.appendChild(lin);
+      campos.push(tx);
+    });
+    let feito = false;
+    const fechar = (ok) => {
+      if (feito) return;
+      feito = true;
+      if (ok) todas.forEach((l, i) => { const v = campos[i].value.replace(/\s+/g, " ").trim(); if (v) l.texto = v; });
+      caixa.style.display = "none";
+      REVISAO_ATUAL = null;
+      resolve(ok);
+    };
+    REVISAO_ATUAL = fechar;
+    caixa.style.display = "block";
+    const nDuv = todas.filter((l) => l.duvida).length;
+    mostrar("Revise o texto das " + todas.length + " legendas (aba Legendas)" + (nDuv ? ": " + nDuv + " com borda vermelha merecem atenção." : ".") + "\nDepois clique em \"Criar as legendas\".");
+    try { caixa.scrollIntoView(); } catch (e) { /* segue */ }
+  });
+}
+
+// ---- Silêncios: ritmos prontos e prévia
+const RITMOS_SIL = { calmo: { minimo: 14, respiro: 7 }, ritmado: { minimo: 8, respiro: 5 }, energetico: { minimo: 4, respiro: 2 } };
+(function () {
+  const caixa = $("silRitmos");
+  if (!caixa) return;
+  const chips = Array.from(caixa.querySelectorAll(".chip"));
+  const aplicar = (r) => {
+    const cfg = RITMOS_SIL[r];
+    if (!cfg) return;
+    estado.minimo = cfg.minimo; estado.respiro = cfg.respiro;
+    mostrarAjuste("minimo"); mostrarAjuste("respiro");
+    chips.forEach((c) => c.classList.toggle("on", c.getAttribute("data-r") === r));
+    guardar("ppRitmoSil", r);
+  };
+  chips.forEach((c) => c.addEventListener("click", () => aplicar(c.getAttribute("data-r"))));
+  const g = lerGuardado("ppRitmoSil");
+  if (g && RITMOS_SIL[g]) aplicar(g);
+})();
+if ($("btnSilPrevia")) $("btnSilPrevia").addEventListener("click", () => semPressa(async () => {
+  const caminho = await obterCaminho();
+  if (!caminho) return;
+  try {
+    const r = await comRelogio("Calculando a prévia (nada é cortado)...", () => chamar("/silences", {
+      path: caminho, noiseDb: lerNumero("limite"), minSilence: lerNumero("minimo"), padding: lerNumero("respiro"),
+    }));
+    const fica = r.keep.reduce((s, [a, b]) => s + (b - a), 0);
+    const tira = Math.max(0, r.duration - fica);
+    mostrar("Prévia: " + r.keep.length + " trechos de fala ficam, " + r.silences.length + " pausas saem.\n" +
+      "O vídeo vai de " + tc(r.duration) + " para " + tc(fica) + " (tira " + tc(tira) + ", " + Math.round((100 * tira) / Math.max(1, r.duration)) + "%).\n" +
+      "Se achar que corta demais, escolha Calmo; de menos, Energético. Depois clique em Cortar silêncios.");
+  } catch (e) { mostrar("Erro na prévia:\n" + (e && e.message ? e.message : e), true); }
+}));
+
+// ---- Vertical: lembrar formato e acompanhamento
+(function () {
+  for (const id of ["vFormato", "vSeguir"]) {
+    const s = $(id);
+    if (!s) continue;
+    const g = lerGuardado("pp_" + id);
+    if (g !== null) s.value = g;
+    s.addEventListener("change", () => guardar("pp_" + id, s.value));
+  }
+})();
+function formatoVertical() {
+  const v = (($("vFormato") && $("vFormato").value) || "1080x1920").split("x").map(Number);
+  return { LARG: v[0] || 1080, ALT: v[1] || 1920 };
+}
+
+// ---- Zoom automático nos cortes ("jump zoom")
+async function valorEscala(p) {
+  for (const f of ["getValue", "getStartValue"]) {
+    try {
+      if (typeof p[f] !== "function") continue;
+      let v = p[f](); if (v && typeof v.then === "function") v = await v;
+      if (v && typeof v === "object" && v.value !== undefined) v = v.value;
+      if (v && typeof v === "object" && typeof v.getValue === "function") v = v.getValue();
+      const n = Number(v);
+      if (isFinite(n) && n > 0) return n;
+    } catch (e) { /* tenta o outro */ }
+  }
+  return 100;
+}
+async function zoomNosCortes(tirar) {
+  const ppro = require("premierepro");
+  const projeto = await ppro.Project.getActiveProject();
+  const seq = await projeto.getActiveSequence();
+  if (!seq) return mostrar("Nenhuma sequência ativa.", true);
+  const sec = async (f) => { const t = await f(); return t && t.seconds !== undefined ? t.seconds : Number(t); };
+  const iv = parseInt(($("zTrilha") && $("zTrilha").value) || "0", 10);
+  const forca = parseFloat(($("zForca") && $("zForca").value) || "118") / 100;
+  if (iv >= (await seq.getVideoTrackCount())) return mostrar("A sequência não tem a trilha V" + (iv + 1) + ".", true);
+  let a = 0, b = 1e9;
+  try { const pin = await sec(() => seq.getInPoint()), pout = await sec(() => seq.getOutPoint()); if (pout > pin + 0.5) { a = pin; b = pout; } } catch (e) { /* tudo */ }
+  const itens = await (await seq.getVideoTrack(iv)).getTrackItems(1, false);
+  const alvo = [];
+  for (const it of itens) {
+    let des = false; try { des = !!(await it.isDisabled()); } catch (e) { des = false; }
+    const ini = await sec(() => it.getStartTime()), fim = await sec(() => it.getEndTime());
+    if (des || fim <= a || ini >= b) continue;
+    alvo.push(it);
+  }
+  if (!alvo.length) return mostrar("Não achei clipes ligados na trilha V" + (iv + 1) + " nesse trecho.", true);
+  mostrar((tirar ? "Tirando o zoom de " : "Aplicando zoom em ") + alvo.length + " cortes...\nNão mexa no Premiere.");
+  const trabalhos = [];
+  let base = null;
+  for (let i = 0; i < alvo.length; i++) {
+    const cadeia = await alvo[i].getComponentChain();
+    const mov = cadeia.getComponentAtIndex(1);
+    const esc = mov.getParam(1);
+    if (base === null) base = await valorEscala(esc);
+    const alvoPct = tirar ? base : (i % 2 === 1 ? base * forca : base);
+    trabalhos.push({ esc, v: alvoPct });
+  }
+  for (let k = 0; k < trabalhos.length; k += 10) {
+    const lote = trabalhos.slice(k, k + 10);
+    projeto.lockedAccess(() => {
+      projeto.executeTransaction((c) => { for (const w of lote) c.addAction(w.esc.createSetValueAction(w.esc.createKeyframe(w.v), true)); }, tirar ? "Zoom: tirar" : "Zoom nos cortes");
+    });
+    await dormir(300);
+  }
+  mostrar(tirar ? "Zoom retirado de " + alvo.length + " cortes (escala " + Math.round(base) + "%)."
+    : "Pronto: zoom de " + Math.round(forca * 100) + "% em " + Math.floor(alvo.length / 2) + " de " + alvo.length + " cortes da V" + (iv + 1) + ", alternando com o enquadramento normal.\n(Ctrl+Z desfaz; ou use \"Tirar o zoom\".)");
+}
+if ($("btnZoom")) $("btnZoom").addEventListener("click", () => semPressa(async () => {
+  try { await zoomNosCortes(false); } catch (e) { mostrar("Erro ao aplicar o zoom:\n" + (e && e.message ? e.message : e), true); }
+}));
+if ($("btnZoomTirar")) $("btnZoomTirar").addEventListener("click", () => semPressa(async () => {
+  try { await zoomNosCortes(true); } catch (e) { mostrar("Erro ao tirar o zoom:\n" + (e && e.message ? e.message : e), true); }
+}));
+
+// ---- Capítulos do YouTube
+if ($("btnCapitulos")) $("btnCapitulos").addEventListener("click", () => semPressa(async () => {
+  let etapa = "começando";
+  try {
+    const ppro = require("premierepro");
+    const projeto = await ppro.Project.getActiveProject();
+    const origem = await projeto.getActiveSequence();
+    if (!origem) return mostrar("Nenhuma sequência ativa (deixe a do podcast ativa).", true);
+    etapa = "achar o áudio da fala na sequência ativa";
+    const { wav, pessoas: pessoasAudio, recorte } = await audioDaSequencia(ppro, origem);
+    etapa = "dividir por assunto";
+    const pedir = () => comRelogio("Dividindo o podcast por assunto...", () => chamar("/capitulos", { path: wav, recorte }));
+    let r;
+    try { r = await pedir(); } catch (e) {
+      if (!/Falta a transcri/.test(e && e.message ? e.message : "")) throw e;
+      etapa = "transcrever o podcast";
+      await transcreverAuto(ppro, projeto, origem, wav, pessoasAudio);
+      etapa = "dividir por assunto";
+      r = await pedir();
+    }
+    const caps = r.capitulos || [];
+    if (!caps.length) return mostrar("Não consegui dividir em capítulos.", true);
+    etapa = "ajustar os tempos para a sua sequência";
+    const mapa = await arquivoParaSequencia(ppro, origem, wav);
+    caps.forEach((c, i) => { c.seq = i === 0 ? 0 : mapa(c.ini); });
+    etapa = "pôr os marcadores";
+    let marcou = false;
+    try {
+      let M = ppro.Markers.getMarkers(origem); if (M && typeof M.then === "function") M = await M;
+      const tipo = (ppro.Constants && ppro.Constants.MarkerType && (ppro.Constants.MarkerType.COMMENT !== undefined ? ppro.Constants.MarkerType.COMMENT : ppro.Constants.MarkerType.Comment)) || "Comment";
+      try {
+        const antigos = (M.getMarkers ? await M.getMarkers() : []) || [];
+        const rem = [];
+        for (const mk of antigos) { try { if (String(await mk.getName()).indexOf("📖") === 0) rem.push(mk); } catch (e) { /* segue */ } }
+        if (rem.length && typeof M.createRemoveMarkerAction === "function") projeto.lockedAccess(() => { projeto.executeTransaction((c) => { for (const mk of rem) c.addAction(M.createRemoveMarkerAction(mk)); }, "Capítulos: limpar"); });
+      } catch (e) { /* sem marcadores antigos */ }
+      const tempos = [];
+      for (const c of caps) tempos.push([await ppro.TickTime.createWithSeconds(c.seq), await ppro.TickTime.createWithSeconds(0)]);
+      projeto.lockedAccess(() => {
+        projeto.executeTransaction((tr) => {
+          caps.forEach((c, i) => tr.addAction(M.createAddMarkerAction("📖 " + c.titulo, tipo, tempos[i][0], tempos[i][1], c.texto)));
+        }, "Capítulos: marcadores");
+      });
+      marcou = true;
+    } catch (e) { marcou = false; }
+    const tcl = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ":" + String(m).padStart(2, "0") : String(m)) + ":" + String(x).padStart(2, "0"); };
+    const lista = caps.map((c) => tcl(c.seq) + " " + c.titulo).join("\n");
+    const caixa = $("capTexto");
+    caixa.value = lista; caixa.style.display = "block";
+    mostrar("Pronto: " + caps.length + " capítulos" + (marcou ? " (marcadores 📖 na sequência)" : "") + ".\nA lista está na caixa da aba Zoom e Capítulos: revise os títulos e cole na descrição do YouTube." +
+      (caps.length < 3 ? "\nAtenção: o YouTube só mostra capítulos a partir de 3 (vídeo curto demais para isso)." : ""));
+  } catch (e) {
+    mostrar("Erro ao " + etapa + ":\n" + (e && e.message ? e.message : e), true);
+  }
+}));

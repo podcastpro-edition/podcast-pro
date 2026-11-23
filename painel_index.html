@@ -170,18 +170,41 @@
     .marca { font-size: 15px; font-weight: 800; letter-spacing: 1px; color: #ffffff; margin: 0 0 8px; }
     .marca span { color: #ff6a2b; }
     .marca small { font-size: 10px; font-weight: 400; letter-spacing: 0; color: #7c7c8e; margin-left: 4px; }
+    /* ---- V2 ---- */
+    #Inicio .grade { display: flex; flex-wrap: wrap; justify-content: space-between; }
+    #Inicio .card { width: calc(50% - 5px); box-sizing: border-box; margin-bottom: 10px; padding: 12px; border-radius: 14px;
+      background: #1d1d27; border: 1px solid #34344a; cursor: pointer; }
+    #Inicio .card:hover { border-color: #ff6a2b; }
+    #Inicio .card .ic { font-size: 22px; }
+    #Inicio .card .t { font-size: 13px; font-weight: 700; color: #fff; margin-top: 4px; }
+    #Inicio .card .d { font-size: 11px; color: #9a9aae; margin-top: 2px; }
+    .passos { display: flex; margin: 6px 0 10px; }
+    .passos div { flex: 1; text-align: center; font-size: 10px; color: #9a9aae; border-top: 3px solid #34344a; padding-top: 4px; margin-right: 4px; }
+    .passos div.on { color: #fff; border-top-color: #ff6a2b; }
+    .chips { display: flex; flex-wrap: wrap; margin: 4px 0 8px; }
+    .chip { padding: 6px 10px; margin: 0 6px 6px 0; border-radius: 14px; background: #2a2a38; color: #ddd; font-size: 12px; cursor: pointer; }
+    .chip.on { background: #4a3fa0; color: #fff; }
+    #revisao { display: none; margin: 8px 0; padding: 10px; border: 1px solid #7c4dff; border-radius: 12px; background: #1b1830; }
+    #revisao .lin { display: flex; align-items: flex-start; margin-bottom: 6px; }
+    #revisao .tc { width: 52px; flex: none; font-size: 11px; color: #b9acff; padding-top: 6px; }
+    #revisao textarea { flex: 1; background: #15151c; color: #eee; border: 1px solid #3a3a48; border-radius: 6px; padding: 4px 6px; font-size: 12px; }
+    #revisao .duvida { border-color: #c0392b; }
+    #listaRev { max-height: 340px; overflow-y: auto; }
+    #capTexto { width: 100%; box-sizing: border-box; min-height: 110px; background: #15151c; color: #eee; border: 1px solid #3a3a48; border-radius: 8px; padding: 6px; font-size: 12px; }
   </style>
 </head>
 <body>
   <div class="marca">PODCAST <span>PRO</span> <small id="verPainel"></small></div>
   <div id="abas">
-    <div id="abaPodcast" class="pill ativa">Podcast</div>
+    <div id="abaInicio" class="pill ativa">Início</div>
+    <div id="abaPodcast" class="pill">Podcast</div>
     <div id="abaLegendas" class="pill">Legendas</div>
     <div id="abaCriativos" class="pill">Criativos</div>
     <div id="abaVertical" class="pill">Vertical</div>
     <div id="abaVirais" class="pill">Virais</div>
     <div id="abaSilencios" class="pill">Silêncios</div>
     <div id="abaBuscar" class="pill">Buscar</div>
+    <div id="abaExtras" class="pill">Zoom e Capítulos</div>
     <div id="abaAvancado" class="pill">Avançado</div>
   </div>
 
@@ -207,10 +230,26 @@
     <div class="dica">Tempo da sequência (como está na timeline). Até 3 minutos por vez.</div>
   </div>
 
+  <!-- INÍCIO -->
+  <div id="Inicio" class="aba visivel">
+    <h2>O que você quer fazer?</h2>
+    <div class="grade">
+      <div class="card" data-aba="Podcast"><div class="ic">🎙</div><div class="t">Podcast</div><div class="d">Sincroniza e troca de câmera sozinho</div></div>
+      <div class="card" data-aba="Legendas"><div class="ic">✨</div><div class="t">Legendas</div><div class="d">Legendas animadas, com revisão do texto</div></div>
+      <div class="card" data-aba="Vertical"><div class="ic">📱</div><div class="t">Vertical</div><div class="d">9:16, 4:5 ou 1:1 seguindo o rosto</div></div>
+      <div class="card" data-aba="Virais"><div class="ic">🔥</div><div class="t">Virais</div><div class="d">Acha os melhores trechos para Reels</div></div>
+      <div class="card" data-aba="Silencios"><div class="ic">✂</div><div class="t">Silêncios</div><div class="d">Tira as pausas, com prévia</div></div>
+      <div class="card" data-aba="Criativos"><div class="ic">🎨</div><div class="t">Criativos</div><div class="d">Frase em tela cheia sobre imagem</div></div>
+      <div class="card" data-aba="Buscar"><div class="ic">🔍</div><div class="t">Buscar</div><div class="d">Monta só os trechos de um assunto</div></div>
+      <div class="card" data-aba="Extras"><div class="ic">🔎</div><div class="t">Zoom e Capítulos</div><div class="d">Zoom nos cortes e capítulos do YouTube</div></div>
+    </div>
+  </div>
+
   <!-- PODCAST -->
-  <div id="Podcast" class="aba visivel">
+  <div id="Podcast" class="aba">
     <h2>Podcast multicâmera</h2>
     <div id="popup"><div class="pt" id="popTitulo"></div><div class="px" id="popTexto"></div><div id="popBotoes"></div></div>
+    <div class="passos"><div class="on">1. Pessoas e câmeras</div><div class="on">2. Ritmo</div><div class="on">3. Montar</div></div>
     <div class="dica">Sincroniza as câmeras com o áudio dos microfones e troca de câmera para quem está falando. Nada é apagado: as câmeras não usadas ficam desativadas.</div>
 
     <div id="menuPartic" class="menu"><span id="setaPartic">▸</span> Selecionar participantes e apresentador</div>
@@ -247,8 +286,17 @@
     </select>
     <div id="btnConcluirPartic" class="pb-ok">✔ Concluir</div>
     </div>
+    <label class="rot" for="pRitmo">Ritmo dos cortes</label>
+    <select id="pRitmo">
+      <option value="natural" selected>Natural (troca quando muda quem fala)</option>
+      <option value="calmo">Calmo (planos longos: mín. 4 s, máx. 25 s)</option>
+      <option value="ritmado">Ritmado (mín. 2,5 s, máx. 12 s)</option>
+      <option value="energetico">Energético (mín. 1,5 s, máx. 7 s)</option>
+      <option value="hiperativo">Hiperativo (mín. 1 s, máx. 4 s)</option>
+    </select>
+    <div class="dica">O máximo faz um plano longo passar rápido pela câmera geral (como um plano de reação) e voltar.</div>
     <div id="btnPodcastTudo" class="cartao"><div class="ico">🎙</div><div class="tx"><div class="t1">Montar podcast completo</div><div class="t2">Alterna as câmeras sozinho</div></div></div>
-    <div class="aviso">Antes: abra a sequência com as 3 câmeras e o áudio dos microfones (a PODCAST 2146).</div>
+    <div class="aviso">Antes: abra a sequência original, com as câmeras no vídeo e os microfones no áudio.</div>
     <div id="btnBuracos" class="cartao"><div class="ico">🩹</div><div class="tx"><div class="t1">Corrigir buracos (frames pretos)</div><div class="t2">Acha trechos sem imagem e tapa com a câmera do trecho anterior</div></div></div>
   </div>
 
@@ -270,6 +318,26 @@
       <option value="Criativo 3">Criativo 3</option>
       <option value="Criativo 4">Criativo 4</option>
     </select>
+    <label class="rot" for="legDestaque">Destacar a palavra que está sendo falada</label>
+    <select id="legDestaque">
+      <option value="">Não</option>
+      <option value="255,214,0" selected>Amarelo</option>
+      <option value="0,230,120">Verde</option>
+      <option value="255,106,43">Laranja</option>
+      <option value="255,60,200">Rosa</option>
+      <option value="80,200,255">Azul</option>
+    </select>
+    <label class="rot" for="legRevisar">Revisar o texto antes de criar</label>
+    <select id="legRevisar">
+      <option value="1" selected>Sim (mostra todas as frases para corrigir)</option>
+      <option value="0">Não (cria direto)</option>
+    </select>
+    <div id="revisao">
+      <div class="ed-tit" style="font-weight:700;color:#fff;margin-bottom:4px">Revise o texto das legendas</div>
+      <div class="dica">Corrija o que precisar. As frases com borda vermelha têm palavras que o programa ouviu com pouca certeza. Para corrigir sempre do mesmo jeito (nomes, termos), use o Dicionário em Avançado.</div>
+      <div id="listaRev"></div>
+      <div class="duplo"><div id="btnRevOk" class="btn-cor roxo">✔ Criar as legendas</div><div id="btnRevCancelar" class="btn-cor laranja">Cancelar</div></div>
+    </div>
     <div id="btnLegSeq" class="cartao"><div class="ico">✨</div><div class="tx"><div class="t1">LEGENDAR SEQUÊNCIA COMPLETA</div><div class="t2">Do começo ao fim da sequência</div></div></div>
     <div id="btnLegInOut" class="cartao"><div class="ico">✂️</div><div class="tx"><div class="t1">LEGENDAR IN/OUT</div><div class="t2">Só entre os pontos In e Out</div></div></div>
     <div class="titulo-destaque">✏️ EDITAR LEGENDAS</div>
@@ -291,6 +359,9 @@
     </div>
     <div id="menuLegAv" class="menu"><span id="setaLegAv">▸</span> Avançado</div>
     <div id="corpoLegAv" style="display:none">
+    <label for="dicLeg">Dicionário (uma troca por linha: errado = certo)</label>
+    <textarea id="dicLeg" rows="4" style="width:100%;box-sizing:border-box;background:#15151c;color:#eee;border:1px solid #3a3a48;border-radius:8px;padding:6px;font-size:12px" placeholder="renato = Renato&#10;terapia do amor = Terapia do Amor"></textarea>
+    <div class="dica">Vale para todas as legendas novas. Fica guardado neste computador.</div>
     <div id="btnOrganizarLeg" class="mini">🗂 Organizar legendas no projeto</div>
     <div id="msgOrgLeg" class="dica">Coloca as legendas numa pasta só e tira do projeto as antigas que não estão mais em uso.</div>
     <div id="btnEscolherMogrt" class="mini">Escolher outro template (.mogrt)...</div>
@@ -304,7 +375,20 @@
 
   <!-- VERTICAL -->
   <div id="Vertical" class="aba">
-    <h2>Versão vertical (9:16)</h2>
+    <h2>Versão vertical</h2>
+    <label class="rot" for="vFormato">Formato</label>
+    <select id="vFormato">
+      <option value="1080x1920" selected>9:16 (Reels, Shorts, TikTok)</option>
+      <option value="1080x1350">4:5 (feed do Instagram)</option>
+      <option value="1080x1080">1:1 (quadrado)</option>
+    </select>
+    <label class="rot" for="vSeguir">Acompanhar o rosto</label>
+    <select id="vSeguir">
+      <option value="parado">Parado (enquadramento fixo em cada corte)</option>
+      <option value="lento">Lento (movimento suave)</option>
+      <option value="normal" selected>Normal</option>
+      <option value="rapido">Rápido (segue cada movimento)</option>
+    </select>
     <div class="dica">Cria uma sequência vertical com a câmera de quem fala, enquadrada no rosto. As 3 câmeras ficam em trilhas separadas e as não usadas ficam desativadas.</div>
     <div id="btnVertSeq" class="cartao"><div class="ico">📱</div><div class="tx"><div class="t1">CONVERTER SEQUÊNCIA COMPLETA</div><div class="t2">Do começo ao fim da sequência, em 9:16</div></div></div>
     <div id="btnVertInOut" class="cartao"><div class="ico">✂️</div><div class="tx"><div class="t1">CONVERTER IN/OUT</div><div class="t2">Só entre os pontos In e Out</div></div></div>
@@ -333,6 +417,9 @@
   <div id="Silencios" class="aba">
     <h2>Cortar silêncios</h2>
     <div id="btnUmClique" class="cartao" style="display:none"></div>
+    <div class="rt" style="font-size:13px;margin-top:4px">Ritmo</div>
+    <div id="silRitmos" class="chips"><div class="chip" data-r="calmo">Calmo</div><div class="chip on" data-r="ritmado">Ritmado</div><div class="chip" data-r="energetico">Energético</div></div>
+    <div id="btnSilPrevia" class="mini">👁 Prévia (quanto vai ser cortado, sem mexer em nada)</div>
     <div id="btnCortarTudo" class="cartao"><div class="ico">✂</div><div class="tx"><div class="t1">Cortar silêncios</div><div class="t2">Remove as pausas e cria uma sequência nova</div></div></div>
     <div class="aviso">Antes: deixe ativa a sequência com o vídeo que será cortado.</div>
     <div id="menuSilAv" class="menu"><span id="setaSilAv">▸</span> Avançado</div>
@@ -389,6 +476,25 @@
     <div id="btnBuscar" class="cartao"><div class="ico">&#128269;</div><div class="tx"><div class="t1">Buscar trechos</div><div class="t2">Mostra o que foi encontrado</div></div></div>
     <div id="btnBuscarMontar" class="mini">Montar sequência com esses trechos</div>
     <div class="aviso">Antes: deixe a PODCAST ativa e faça a transcrição (aba Legendas, uma vez só).</div>
+  </div>
+
+  <!-- ZOOM E CAPÍTULOS -->
+  <div id="Extras" class="aba">
+    <h2>Zoom automático nos cortes</h2>
+    <div class="dica">Alterna um zoom leve a cada corte da trilha escolhida (estilo "jump zoom"), para vídeo de uma câmera só ficar mais dinâmico. Use depois de cortar os silêncios. Ctrl+Z desfaz.</div>
+    <div class="linha">
+      <div><label for="zTrilha">Trilha de vídeo</label>
+        <select id="zTrilha"><option value="0" selected>V1</option><option value="1">V2</option><option value="2">V3</option><option value="3">V4</option></select></div>
+      <div><label for="zForca">Zoom</label>
+        <select id="zForca"><option value="110">Leve (110%)</option><option value="118" selected>Médio (118%)</option><option value="128">Forte (128%)</option></select></div>
+    </div>
+    <div id="btnZoom" class="cartao"><div class="ico">🔎</div><div class="tx"><div class="t1">APLICAR ZOOM NOS CORTES</div><div class="t2">Na sequência ativa (ou só entre In e Out, se marcados)</div></div></div>
+    <div id="btnZoomTirar" class="mini">Tirar o zoom (voltar a 100%)</div>
+
+    <h2>Capítulos do YouTube</h2>
+    <div class="dica">Divide o podcast por assunto, põe marcadores na sequência e escreve a lista para colar na descrição do YouTube. Usa a transcrição (se ainda não existir, o painel faz sozinho).</div>
+    <div id="btnCapitulos" class="cartao"><div class="ico">📖</div><div class="tx"><div class="t1">CRIAR CAPÍTULOS</div><div class="t2">Marcadores na timeline e lista para copiar</div></div></div>
+    <textarea id="capTexto" style="display:none"></textarea>
   </div>
 
   <!-- AVANÇADO -->
@@ -450,10 +556,12 @@
     <div class="dica">Transcreve o podcast todo (demora) e cria os arquivos .srt. Só precisa fazer uma vez.</div>
     <div id="btnLegendasPodcast" class="mini">Transcrever o podcast (por palavra)</div>
     <div class="aviso">Antes: deixe a sequência do podcast ativa.</div>
+    <div style="display:none">
     <h2>Teste: modelo de legenda (projeto)</h2>
     <div class="dica">Teste técnico: importa a sequência do arquivo C:\PODCAST_PRO\modelos\modelos_teste.prproj e coloca na timeline ativa, na posição do cursor.</div>
     <div id="btnTesteModelo" class="mini">Testar importar modelo do projeto</div>
     <div id="msgModelo" class="dica"></div>
+    </div>
     </div>
   </div>
 

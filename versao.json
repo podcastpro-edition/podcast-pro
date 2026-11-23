@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.129",
-  "notas": "Corte pelo olhar mede para onde a cabeca aponta (sem atraso) e le so os quadros-chave; procura de tremidas desligada por padrao (montagem bem mais rapida)",
+  "versao": "2.0.0",
+  "notas": "V2: tela inicial; ritmo dos cortes (min/max) no Podcast; legendas com revisao do texto, dicionario e palavra falada em destaque; vertical 9:16/4:5/1:1 acompanhando o rosto; silencios com ritmos e previa; novos Zoom nos cortes e Capitulos do YouTube",
   "arquivos": {
-    "server.py": "72299eaf2996c83a4ae0ff895a27e3645f2939ef0c66a524a914f54708a87426",
-    "painel_index.html": "93d516d16e53246c3a46ea21ea01394b8310b4e672df00bb31391684e6dc40c2",
-    "painel_main.js": "04d3c28fa7ddd7e97e0b8fe18f0f380c9d8ad72bf55d93f5f404c31a27ddcc74",
+    "server.py": "8271c5d273603813e6cc50bf28f4194da30eab877553eca9679d2f6f0b5bcf81",
+    "painel_index.html": "7a08c8b4a485d4e2d21ea18acaf2bfdf35ab45ac4fea1027ea55c96cb92b867d",
+    "painel_main.js": "8b9ead711b455f019aa824fce5f6d83e596bc71cc81fe357c9ecbdc194b019ad",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",
