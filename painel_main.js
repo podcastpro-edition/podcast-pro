@@ -864,6 +864,38 @@ const PODCAST = {
 })();
 
 // Câmeras realmente usadas (as dos participantes + a geral), em ordem: ["V1","V3"...]
+// Ajusta sozinho as caixas de participantes ao que a sequência aberta realmente tem
+// (câmera que não existe vira outra trilha livre ou "Sem imagem"; áudio que não existe vira Automático).
+async function ajustarAoSequencia(sequencia) {
+  let nV = 0, nA = 0;
+  try { nV = await sequencia.getVideoTrackCount(); nA = await sequencia.getAudioTrackCount(); } catch (e) { return ""; }
+  if (nV < 1) return "";
+  const avisos = [];
+  const linhas = LINHAS.ap.concat(LINHAS.pt);
+  const idx = (v) => parseInt(String(v).slice(1), 10);
+  const usadas = new Set();
+  for (const l of linhas) if (l.cam.value !== "G" && idx(l.cam.value) <= nV) usadas.add(l.cam.value);
+  for (const l of linhas) {
+    if (l.cam.value === "G" || idx(l.cam.value) <= nV) continue;
+    const antes = l.cam.value;
+    l.cam.value = "G"; // a câmera pedida não existe: essa pessoa só se ouve (sem imagem)
+    avisos.push(antes + " → sem imagem");
+  }
+  const g = $("pGeral");
+  if (g && idx(g.value) > nV) {
+    const antes = g.value;
+    let outra = null;
+    for (let k = 1; k <= nV; k++) if (!linhas.some((l) => l.cam.value === "V" + k)) { outra = "V" + k; break; }
+    g.value = outra || "V1";
+    avisos.push("câmera geral " + antes + " → " + g.value);
+  }
+  for (const l of linhas) {
+    const a = parseInt(l.aud.value, 10);
+    if (a >= nA) { l.aud.value = "-2"; avisos.push("áudio → automático"); }
+  }
+  return avisos.length ? "Ajustei sozinho ao que a sequência tem: " + avisos.join(", ") + "." : "";
+}
+
 function camerasUsadas() {
   const s = new Set(PODCAST.pessoas.map((p) => p.camera));
   s.add(PODCAST.geral);
@@ -873,6 +905,7 @@ function camerasUsadas() {
 // Confere se a sequência ativa tem as trilhas escolhidas, descobre onde começa o áudio
 // multicanal dos microfones e devolve o caminho desse arquivo.
 async function wavDoPodcast(ppro, sequencia) {
+  await ajustarAoSequencia(sequencia);
   await descobrirCanaisReais(ppro, sequencia);
   const pessoas = PODCAST.pessoas;
   const nV = await sequencia.getVideoTrackCount();
@@ -1392,6 +1425,10 @@ async function fluxoPodcastCompleto() {
     const projeto = await ppro.Project.getActiveProject();
     const origem = await projeto.getActiveSequence();
     if (!origem) return popup("Nenhuma sequência aberta", "Abra a sequência com as câmeras e o áudio dos microfones e clique de novo.", [{ rotulo: "Entendi" }]);
+
+    // ajusta sozinho as caixas ao que a sequência tem (sem perguntar)
+    const ajustou = await ajustarAoSequencia(origem);
+    if (ajustou) mostrar(ajustou);
 
     // sem câmeras para cortar? avisa antes de gastar tempo
     etapa = "conferir as câmeras";
