@@ -1,8 +1,8 @@
 {
-  "versao": "1.0.125",
-  "notas": "Botao Parar esta acao: solta o painel na hora e encerra o trabalho do programa local",
+  "versao": "1.0.126",
+  "notas": "Podcast: acerta o instante de cada troca de camera pelo comeco da fala de quem entra (menos atraso)",
   "arquivos": {
-    "server.py": "b89faa23bbdc96026e35868ed36df265fc368472cc476e2262fcf0bdbe41c0db",
+    "server.py": "5dc80840b7aad7db7c2e23cde4bc9abf2ba061e7672da9fa4b97150341d0ac0c",
     "painel_index.html": "9ca75e828071bb1b2ae09d9aaac45867a84102a69628dd9e8e7d2a473bc9c009",
     "painel_main.js": "99d7b743239b0c872b411af49889dbcbf9d8623dfa978571081adc8b2cf25ddb",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",

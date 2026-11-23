@@ -70,7 +70,7 @@ def parar_tudo():
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.125"
+VERSAO = "1.0.126"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1328,6 +1328,74 @@ def trechos_pelo_olhar(cameras, atraso, rec0, rec1):
     return [{"ini": rec0 + a, "fim": rec0 + b, "quem": "olhar", "camera": c} for a, b, c in planos]
 
 
+def refinar_trocas(trechos, wav, canal, taxa=16000, janela=3.0, antecipo=0.2):
+    """Acerta o instante de cada troca de voz: o corte vai para o começo da fala de quem entra
+    (uma pausa seguida de voz com o timbre/altura da nova pessoa), um pouco antes dela começar.
+    Sem isso a troca sai alguns segundos atrasada, porque a separação das vozes trabalha em janelas."""
+    import numpy as np
+    if len(trechos) < 2:
+        return trechos
+    ini0 = max(0.0, trechos[0]["ini"] - 1.0)
+    fim0 = trechos[-1]["fim"] + 1.0
+    x = ler_canal(wav, canal, taxa, ini0, fim0 - ini0)
+    passo = 0.02
+    n = len(x) // int(taxa * passo)
+    if n < 100:
+        return trechos
+    env = 10 * np.log10(np.maximum((x[: n * int(taxa * passo)].reshape(n, -1) ** 2).mean(axis=1), 1e-12))
+    limiar = min(float(np.percentile(env, 10)) + 12, float(np.percentile(env, 95)) - 12)
+    fala = env > limiar
+    # começos de fala: depois de pelo menos 0,25 s de pausa
+    pausa_min = int(0.25 / passo)
+    onsets = []
+    sil = 0
+    for i, f in enumerate(fala):
+        if f:
+            if sil >= pausa_min:
+                onsets.append(i * passo + ini0)
+            sil = 0
+        else:
+            sil += 1
+    if not onsets:
+        return trechos
+    # altura típica de cada voz (amostras de até 40 s dos trechos dela)
+    def f0_de(a, b):
+        ia, ib = int((a - ini0) * taxa), int((b - ini0) * taxa)
+        return _f0_mediano(x[max(0, ia):max(0, ib)], taxa)
+    altura = {}
+    for q in sorted({t["quem"] for t in trechos}):
+        valores = []
+        for t in trechos:
+            if t["quem"] == q and len(valores) < 8:
+                m = (t["ini"] + t["fim"]) / 2
+                v = f0_de(m - 2.0, min(m + 2.0, t["fim"]))
+                if v > 0:
+                    valores.append(v)
+        altura[q] = float(np.median(valores)) if valores else 0.0
+    novos = [dict(t) for t in trechos]
+    for k in range(1, len(novos)):
+        ant, atu = novos[k - 1], novos[k]
+        b = atu["ini"]
+        fa, fn = altura.get(ant["quem"], 0.0), altura.get(atu["quem"], 0.0)
+        melhor, dist = None, None
+        for o in onsets:
+            if abs(o - b) > janela:
+                continue
+            fo = f0_de(o, o + 1.2)
+            if fa > 0 and fn > 0 and fo > 0 and abs(fo - fn) >= abs(fo - fa):
+                continue  # essa fala parece ser de quem já estava falando
+            d = abs(o - b)
+            if dist is None or d < dist:
+                melhor, dist = o, d
+        if melhor is None:
+            continue
+        nb = melhor - antecipo
+        if nb - ant["ini"] < 0.8 or atu["fim"] - nb < 0.8:
+            continue
+        ant["fim"] = atu["ini"] = round(nb, 2)
+    return novos
+
+
 def alternar_sem_imagem(trechos, pessoas, geral, tempo=11.0):
     """Quem fala mas não aparece em nenhuma câmera (só se ouve a voz): a imagem alterna entre os
     ângulos que existem (ex.: duas câmeras no apresentador), trocando a cada ~'tempo' segundos."""
@@ -1383,6 +1451,10 @@ def plano_podcast(wav, cameras, pessoas, geral, minimo, respiro, duracao_minima,
         import numpy as np
         janela = 0.1
         trechos = [dict(t) for t in trechos_prontos]
+        try:
+            trechos = refinar_trocas(trechos, wav, pessoas[0].get("canal") or 0)
+        except Exception as ex:
+            print("[podcast-pro] refinar trocas falhou:", ex)
         tempo = {}
         for t in trechos:
             tempo[t["quem"]] = tempo.get(t["quem"], 0.0) + (t["fim"] - t["ini"])
