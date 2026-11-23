@@ -838,7 +838,7 @@ const PODCAST = {
     const { pessoas } = lerPessoas();
     if (!pessoas.length) throw new Error("Escreva o nome de pelo menos uma pessoa em \"Participantes e apresentador\" (aba Podcast).");
     const base = PODCAST_BASE_WAV !== null ? PODCAST_BASE_WAV : Math.min(...pessoas.map((p) => p.trilhaAudio));
-    return pessoas.map((p) => ({ ...p, canal: Math.max(0, p.trilhaAudio - base) }));
+    return pessoas.map((p) => ({ ...p, canal: CANAL_REAL[p.trilhaAudio] !== undefined ? CANAL_REAL[p.trilhaAudio] : Math.max(0, p.trilhaAudio - base) }));
   },
   get vozUnica() { return lerPessoas().pessoas.some((p) => p.vozUnica); },
   get geral() { return $("pGeral") ? $("pGeral").value : "V1"; },
@@ -873,6 +873,7 @@ function camerasUsadas() {
 // Confere se a sequência ativa tem as trilhas escolhidas, descobre onde começa o áudio
 // multicanal dos microfones e devolve o caminho desse arquivo.
 async function wavDoPodcast(ppro, sequencia) {
+  await descobrirCanaisReais(ppro, sequencia);
   const pessoas = PODCAST.pessoas;
   const nV = await sequencia.getVideoTrackCount();
   const nA = await sequencia.getAudioTrackCount();
@@ -893,6 +894,41 @@ async function wavDoPodcast(ppro, sequencia) {
   }
   PODCAST_BASE_WAV = base;
   return wav;
+}
+
+// Número REAL do canal de cada trilha de áudio (o "Canal 13" que aparece no nome do clipe).
+// Sem isso, se você apagar trilhas da sequência, a contagem por posição desloca e o programa
+// pode ler um canal que você já tinha tirado.
+let CANAL_REAL = {};
+async function nomeDoItem(it) {
+  try { if (typeof it.getName === "function") { const n = await it.getName(); if (n) return String(n); } } catch (e) { /* tenta o outro */ }
+  try { const pi = await it.getProjectItem(); if (pi && pi.name) return String(pi.name); } catch (e) { /* sem nome */ }
+  return "";
+}
+async function descobrirCanaisReais(ppro, sequencia) {
+  CANAL_REAL = {};
+  const nA = await sequencia.getAudioTrackCount();
+  const porArquivo = {};
+  for (let i = 0; i < nA; i++) {
+    try {
+      const itens = await (await sequencia.getAudioTrack(i)).getTrackItems(1, false);
+      if (!itens.length) continue;
+      const caminho = await caminhoDaTrilha(ppro, sequencia, "A", i);
+      const nome = await nomeDoItem(itens[0]);
+      const m = /(?:canal|channel|ch)\s*\.?\s*(\d+)\s*$/i.exec(nome.trim());
+      (porArquivo[caminho] = porArquivo[caminho] || []).push({ i, canal: m ? parseInt(m[1], 10) - 1 : null, nome });
+    } catch (e) { /* trilha vazia */ }
+  }
+  const resumo = [];
+  for (const lista of Object.values(porArquivo)) {
+    const todos = lista.every((x) => x.canal !== null && x.canal >= 0);
+    const distintos = new Set(lista.map((x) => x.canal)).size === lista.length;
+    if (lista.length > 1 || todos) {
+      if (todos && distintos) { for (const x of lista) { CANAL_REAL[x.i] = x.canal; resumo.push("A" + (x.i + 1) + "=canal " + (x.canal + 1)); } }
+      else resumo.push("não consegui ler o número do canal (nomes: " + lista.map((x) => x.nome || "?").join(", ") + "); uso a ordem das trilhas");
+    }
+  }
+  return resumo;
 }
 
 async function caminhoDaTrilha(ppro, sequencia, tipo, indice) {
@@ -964,7 +1000,7 @@ async function recorteDaTrilha(ppro, sequencia, trilhaIdx) {
 // Nada é apagado: o que não for usado fica só silenciado na sequência nova.
 // Lembra qual áudio foi escolhido da última vez (para a mesma sequência/pessoas), em qualquer aba
 let MEMORIA_AUDIO = null;
-const assinaturaAudio = (faixas, alvo) => JSON.stringify([faixas.map((f) => [f.trilha, f.path]), alvo.map((p) => [p.nome, p.camera])]);
+const assinaturaAudio = (faixas, alvo) => JSON.stringify([faixas.map((f) => [f.trilha, f.path, f.canal]), alvo.map((p) => [p.nome, p.camera])]);
 function lembrarAudio(sig, auto) {
   MEMORIA_AUDIO = { sig, auto };
   try { localStorage.setItem("ppMemoriaAudio", JSON.stringify(MEMORIA_AUDIO)); } catch (e) { /* sem armazenamento */ }
@@ -985,6 +1021,10 @@ async function garantirAudio(ppro, sequencia) {
     mostrar("Lendo as trilhas de áudio da sequência: " + (i + 1) + " de " + nA + "...");
     try { faixas.push({ trilha: i, path: await caminhoDaTrilha(ppro, sequencia, "A", i) }); } catch (e) { /* trilha vazia */ }
   }
+  await descobrirCanaisReais(ppro, sequencia);
+  for (const f of faixas) if (CANAL_REAL[f.trilha] !== undefined) f.canal = CANAL_REAL[f.trilha];
+  const lidos = Object.keys(CANAL_REAL).map((k) => "A" + (Number(k) + 1) + "=canal " + (CANAL_REAL[k] + 1));
+  if (lidos.length) mostrar("Canais do arquivo de áudio: " + lidos.join(", ") + "\nAnalisando as trilhas...");
   const sigAudio = assinaturaAudio(faixas, alvo);
   const jaFeito = lerMemoriaAudio(sigAudio);
   if (jaFeito) { // já escolhi o áudio desta sequência antes: usa o mesmo, sem perguntar e sem reanalisar

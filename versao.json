@@ -1,10 +1,10 @@
 {
-  "versao": "1.0.114",
-  "notas": "Podcast: opcao Sem imagem para quem so se ouve (alterna os angulos); procura de tremidas mais rapida (cameras em paralelo e GPU)",
+  "versao": "1.0.115",
+  "notas": "Podcast: le o numero real do canal (Canal 13...) e nao confunde mais quando trilhas de audio sao apagadas da sequencia",
   "arquivos": {
-    "server.py": "b43c34dc4b86e73025cd4aa5d0aba2f097e10edd41819c6d8d0bf505b7436416",
+    "server.py": "d70cb224d9092bd1aa793912cd577291bd305612d80478801beb2e2b121596da",
     "painel_index.html": "4c3739e239630f9d64cbc0be20a7b8e198e53d2b775c6e43c7759dc675f63abb",
-    "painel_main.js": "0d55c99c859ee2c88998641e2fa8c7c4b06bcdc0b97e61d7b419279efcc241b1",
+    "painel_main.js": "6db6f6ca84a9381b9dd9b1e15021d5abaedfa0f25d0c06bce5b91b9a54aca854",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",
     "img_Classic.png": "0727478911993ee3d965a8f79d8c41c32ae054118a160adeac55e9e596c1b753",
     "img_Film.png": "c95c7ccc59a1baf6d3f21112a9ddd1ad0cf3184be6c012e7f8c0a5aa74faea85",

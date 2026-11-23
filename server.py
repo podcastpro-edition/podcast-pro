@@ -42,7 +42,7 @@ if os.name == "nt":  # não abrir janelinhas ao chamar o FFmpeg
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.114"
+VERSAO = "1.0.115"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -700,7 +700,8 @@ def avaliar_audios(faixas, cameras, pessoas, recorte=None):
     grupos, canal_de = {}, {}
     for f in faixas:
         lista = grupos.setdefault(norm(f["path"]), [])
-        canal_de[f["trilha"]] = len(lista)
+        # 'canal' = número real do canal no arquivo (vem do nome do clipe); sem ele, vale a ordem das trilhas
+        canal_de[f["trilha"]] = int(f["canal"]) if f.get("canal") is not None else len(lista)
         lista.append(f["trilha"])
 
     info, envs = [], {}
