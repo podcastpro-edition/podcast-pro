@@ -4639,7 +4639,16 @@ const lerGuardado = (k) => { try { return localStorage.getItem(k); } catch (e) {
 // ---- Tela inicial: cada cartão abre a aba dele
 (function () {
   Array.from(document.querySelectorAll("#Inicio .card")).forEach((c) => {
-    c.addEventListener("click", () => { if (window.abrirAba) window.abrirAba(c.getAttribute("data-aba")); });
+    // aciona o próprio botão da aba: algumas abas (Criativos, Legendas, Avançado) montam o conteúdo nesse clique
+    c.addEventListener("click", () => {
+      const aba = c.getAttribute("data-aba");
+      const b = $("aba" + aba);
+      if (b) {
+        try { if (typeof b.click === "function") { b.click(); return; } } catch (e) { /* tenta o outro */ }
+        try { b.dispatchEvent(new Event("click")); return; } catch (e) { /* tenta o outro */ }
+      }
+      if (window.abrirAba) window.abrirAba(aba);
+    });
   });
 })();
 
