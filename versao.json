@@ -1,8 +1,8 @@
 {
-  "versao": "1.0.127",
-  "notas": "Podcast: da para apagar a linha de participante e deixar so o apresentador (o painel lembra)",
+  "versao": "1.0.128",
+  "notas": "Corte pelo olhar: troca mais rapida (puxa o corte para o instante certo e sai um pouco antes)",
   "arquivos": {
-    "server.py": "c67e780f99e28f340840be832bc42807758d8ede356695058f4c43c1acd87524",
+    "server.py": "a9c0175c6a671214cb5b6b305592a2882f944b392264103c355b7beee044b906",
     "painel_index.html": "9ca75e828071bb1b2ae09d9aaac45867a84102a69628dd9e8e7d2a473bc9c009",
     "painel_main.js": "04d3c28fa7ddd7e97e0b8fe18f0f380c9d8ad72bf55d93f5f404c31a27ddcc74",
     "img_Bold.png": "11b25dacea1e3b4b7f59249029620f8249af0d13a1d5d55e41e98ebeac134f98",

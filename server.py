@@ -70,7 +70,7 @@ def parar_tudo():
 
 HOST = "127.0.0.1"
 PORT = 8765
-VERSAO = "1.0.127"
+VERSAO = "1.0.128"
 URL_ATUALIZACAO = "https://raw.githubusercontent.com/podcastpro-edition/podcast-pro/main/"
 
 RE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
@@ -1256,32 +1256,40 @@ def _serie_olhar(caminho, a0, dur, fps=2, largura=480):
     return nota
 
 
-def decidir_olhar(series, fps=2, minimo=3.0, folga=1.0):
+def decidir_olhar(series, fps=2, minimo=2.5, folga=0.5, antecipo=0.3):
     """series: {camera: array de notas}. Devolve [(ini, fim, camera)] em segundos desde o começo da série.
-    A câmera escolhida é a que mais 'vê o rosto de frente'; só troca quando a outra é claramente melhor
-    e cada plano dura pelo menos 'minimo' segundos."""
+    A câmera escolhida é a que mais 'vê o rosto de frente'. A decisão usa uma suavização curta; depois cada
+    troca é puxada para trás, até o instante em que a nova câmera passou a ser a melhor, e sai um pouco
+    antes (antecipo), para o corte não parecer atrasado."""
     import numpy as np
     cams = list(series.keys())
     n = min(len(v) for v in series.values())
     if n < fps * 4:
         return []
-    k = max(1, int(fps * folga * 2))
+    k = max(1, int(round(fps * folga * 2)))
     suave = {c: np.convolve(series[c][:n], np.ones(k) / k, mode="same") for c in cams}
     atual, escolha = None, []
     for i in range(n):
         melhor = max(cams, key=lambda c: suave[c][i])
-        outros = [suave[c][i] for c in cams if c != melhor]
-        segundo = max(outros) if outros else 0.0
         if suave[melhor][i] <= 0.05:
             cam = atual  # ninguém de frente: segue na mesma câmera
         elif atual is None or melhor == atual:
             cam = melhor
         else:
-            cam = melhor if suave[melhor][i] > suave[atual][i] * 1.25 + 0.05 else atual
+            cam = melhor if suave[melhor][i] > suave[atual][i] * 1.15 + 0.05 else atual
         if cam is None:
             cam = melhor
         atual = cam
         escolha.append(cam)
+    # puxa cada troca para o instante em que a nova câmera realmente passou a ser a melhor
+    for i in range(1, n):
+        if escolha[i] != escolha[i - 1]:
+            nova, velha = escolha[i], escolha[i - 1]
+            j = i
+            while j > 0 and i - j < int(3 * fps) and escolha[j - 1] == velha and suave[nova][j - 1] >= suave[velha][j - 1] and suave[nova][j - 1] > 0.05:
+                j -= 1
+            for q in range(j, i):
+                escolha[q] = nova
     # planos mínimos: pedaços curtos viram parte do plano vizinho
     planos = []
     for i, c in enumerate(escolha):
@@ -1304,13 +1312,17 @@ def decidir_olhar(series, fps=2, minimo=3.0, folga=1.0):
             else:
                 fund.append(p)
         planos = fund
+    # cada troca sai um pouco antes
+    for i in range(1, len(planos)):
+        t = max(planos[i - 1][0] + 0.5, planos[i][0] - antecipo)
+        planos[i - 1][1] = planos[i][0] = t
     return [(a, b, c) for a, b, c in planos]
 
 
 def trechos_pelo_olhar(cameras, atraso, rec0, rec1):
     """Trechos [{ini, fim, quem, camera}] em tempo do gravador, escolhidos pelo olhar. [] se não deu."""
     from concurrent.futures import ThreadPoolExecutor
-    fps = 2
+    fps = 4  # amostras por segundo (os quadros-chave se repetem entre si)
 
     def uma(cam):
         import numpy as np
