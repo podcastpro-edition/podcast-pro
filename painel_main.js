@@ -4977,15 +4977,15 @@ function ecadMontar(usos) {
           try {
             const pi = await it.getProjectItem();
             nome = pi.name;
-            try { nome = String(await (await ppro.ClipProjectItem.cast(pi)).getMediaFilePath()).split(/[\/]/).pop() || nome; } catch (e) { /* fica o nome do item */ }
+            try { nome = String(await (await ppro.ClipProjectItem.cast(pi)).getMediaFilePath()).split(/[\\/]/).pop() || nome; } catch (e) { /* fica o nome do item */ }
           } catch (e) { continue; }
           usos.push({ nome, inicio: (await it.getStartTime()).seconds, fim: (await it.getEndTime()).seconds });
         }
       }
       const texto = ecadMontar(usos);
       if (!texto) return mostrar("Nenhuma trilha com código (ex.: BRPJ...) nas faixas de áudio ativas.", true);
-      const nome = ($("ecadNome").value.trim() || seq.name).replace(/[\/:*?"<>|]/g, "_");
-      const pasta = $("ecadPasta").value.trim().replace(/[\/]+$/, "");
+      const nome = ($("ecadNome").value.trim() || seq.name).replace(/[\\/:*?"<>|]/g, "_");
+      const pasta = $("ecadPasta").value.trim().replace(/[\\/]+$/, "");
       const r = await chamar("/ecad/salvar", { caminho: pasta + "\\" + nome + ".txt", texto });
       mostrar("ECAD salvo em:\n" + r.caminho + "\n\n" + texto);
     } catch (e) {
